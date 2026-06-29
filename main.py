@@ -8,7 +8,6 @@ import io
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
-# Загружаем токен из скрытого файла .env
 load_dotenv()
 
 intents = discord.Intents.default()
@@ -16,7 +15,6 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Глобальная переменная для хранения главного сообщения битвы
 battle_message = None
 
 def load_game_data():
@@ -26,7 +24,6 @@ def load_game_data():
         bosses_data = json.load(f)
     return skills_data, bosses_data
 
-# Загружаем конфигурацию
 CLASS_SKILLS, BOSSES_LIST = load_game_data()
 AVAILABLE_CLASSES = list(CLASS_SKILLS.keys())
 
@@ -39,8 +36,19 @@ class GameSession:
         self.boss_max_hp = 0
         self.boss_min_dmg = 0
         self.boss_max_dmg = 0
+        # Новые параметры защиты босса
+        self.boss_phys_def = 0.0
+        self.boss_mag_def = 0.0
+        
         self.turn_order = []
         self.current_turn_index = 0
+        
+        # === СИСТЕМА КОМАНДНЫХ БАФФОВ ===
+        self.atk_buff_value = 0.0   # Текущий процент бонуса к атаке (например, 0.3)
+        self.atk_buff_turns = 0     # Сколько ходов игроков осталось
+        
+        self.def_buff_value = 0.0   # На сколько снижается урон босса (например, 0.25)
+        self.def_buff_turns = 0     # Сколько ходов игроков осталось
 
 session = GameSession()
 
@@ -72,12 +80,21 @@ def generate_battle_image(current_player_id=None):
     except FileNotFoundError:
         draw.rectangle([boss_x, boss_y, boss_x + boss_w, boss_y + boss_h], fill=(200, 50, 50, 255))
     
-    draw.text((boss_x, boss_y - 40), f"{session.boss_name}", fill="white", font=font_name)
+    # Имя и параметры защиты босса в названии
+    draw.text((boss_x, boss_y - 45), f"{session.boss_name} (🛡️Физ:{int(session.boss_phys_def*100)}% 🔮Маг:{int(session.boss_mag_def*100)}%)", fill="white", font=font_name)
     draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20))
     
     hp_percent = session.boss_hp / session.boss_max_hp
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
     draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp}", fill="white", font=font_hp)
+
+    # Отрисовка активных баффов на экране (сверху по центру)
+    buff_y = 20
+    if session.atk_buff_turns > 0:
+        draw.text((320, buff_y), f"⚔️ Бонус Атаки: +{int(session.atk_buff_value*100)}% ({session.atk_buff_turns} ходов)", fill="#FFD700", font=font_name)
+        buff_y += 20
+    if session.def_buff_turns > 0:
+        draw.text((320, buff_y), f"🛡️ Защита команды: +{int(session.def_buff_value*100)}% ({session.def_buff_turns} ходов)", fill="#00FFFF", font=font_name)
 
     # Отрисовка игроков
     p_w, p_h = 80, 80
@@ -120,7 +137,6 @@ def generate_battle_image(current_player_id=None):
     return discord.File(fp=img_byte_arr, filename="battle.png")
 
 
-# === ПАНЕЛЬ КНОПОК ДЛЯ ХОДА ИГРОКА ===
 class TurnButtons(discord.ui.View):
     def __init__(self, player, timeout=30):
         super().__init__(timeout=timeout)
@@ -159,9 +175,9 @@ class TurnButtons(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f'✅ Бот {bot.user} успешно запущен!')
+    print(f'✅ Бот {bot.user} запущен и готов к RPG-бою!')
 
-@bot.command(name="старт")
+@bot.command(name="старт-секрет")
 async def start_boss(ctx):
     """Команда для запуска лобби и проведения боя"""
     global session, BOSSES_LIST, CLASS_SKILLS, battle_message
@@ -181,6 +197,15 @@ async def start_boss(ctx):
     session.boss_max_hp = current_boss["hp"]
     session.boss_min_dmg = current_boss["min_damage"]
     session.boss_max_dmg = current_boss["max_damage"]
+    # Загружаем деф босса
+    session.boss_phys_def = current_boss.get("physical_def", 0.0)
+    session.boss_mag_def = current_boss.get("magical_def", 0.0)
+    
+    # Сбрасываем баффы
+    session.atk_buff_value = 0.0
+    session.atk_buff_turns = 0
+    session.def_buff_value = 0.0
+    session.def_buff_turns = 0
     
     await ctx.send(
         f"🚨 **ВНИМАНИЕ! Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!** 🚨\n"
@@ -232,21 +257,60 @@ async def start_boss(ctx):
             if view.chosen_skill is None:
                 action_text = "пропустил свой ход! 💤"
             else:
-                # === УМНАЯ ДИНАМИЧЕСКАЯ ЛОГИКА ИЗ JSON ===
                 skill_name = view.chosen_skill["name"]
-                damage = view.chosen_skill["damage"]
+                base_damage = view.chosen_skill["damage"]
+                dmg_type = view.chosen_skill.get("dmg_type", "none")
                 heal_amount = view.chosen_skill["heal"]
+                
+                # Параметры новых баффов из JSON
+                b_atk_pct = view.chosen_skill.get("buff_atk_pct", 0.0)
+                b_def_pct = view.chosen_skill.get("buff_def_pct", 0.0)
+                b_turns = view.chosen_skill.get("buff_turns", 0)
                 
                 action_text = f"использует **{skill_name}**"
                 
-                # Если у навыка есть лечение, лечим живых союзников
+                # --- РАСЧЕТ УРОНА С УЧЕТОМ БАФФОВ И ЗАЩИТЫ БОССА ---
+                if base_damage > 0:
+                    # Применяем бафф на атаку команды, если он активен
+                    if session.atk_buff_turns > 0:
+                        base_damage = int(base_damage * (1 + session.atk_buff_value))
+                    
+                    # Применяем защиту босса в зависимости от типа урона
+                    if dmg_type == "physical":
+                        damage = max(1, int(base_damage * (1 - session.boss_phys_def)))
+                        action_text += f" (Физический урон, порезано защитой босса)"
+                    elif dmg_type == "magical":
+                        damage = max(1, int(base_damage * (1 - session.boss_mag_def)))
+                        action_text += f" (Магический урон, порезано защитой босса)"
+                    else:
+                        damage = base_damage
+                
+                # Обработка лечения
                 if heal_amount > 0:
                     action_text += f" (+{heal_amount} HP команде!)"
                     for p in session.players.values():
                         if p["is_alive"]:
                             p["hp"] = min(100, p["hp"] + heal_amount)
 
+                # НАКЛАДЫВАЕМ НОВЫЕ БАФФЫ (если они есть у скилла)
+                if b_turns > 0:
+                    if b_atk_pct > 0:
+                        session.atk_buff_value = b_atk_pct
+                        session.atk_buff_turns = b_turns
+                        action_text += f"\n✨ Наложен бафф: +{int(b_atk_pct*100)}% к атаке всей команды на {b_turns} ходов игроков!"
+                    if b_def_pct > 0:
+                        session.def_buff_value = b_def_pct
+                        session.def_buff_turns = b_turns
+                        action_text += f"\n🛡️ Наложен щит: входящий урон от босса снижен на {int(b_def_pct*100)}% на {b_turns} ходов игроков!"
+
+            # Наносим урон боссу
             session.boss_hp = max(0, session.boss_hp - damage)
+            
+            # === СГОРАНИЕ БАФФОВ ПОСЛЕ ХОДА ИГРОКА ===
+            if session.atk_buff_turns > 0:
+                session.atk_buff_turns -= 1
+            if session.def_buff_turns > 0:
+                session.def_buff_turns -= 1
             
             img_file = generate_battle_image(current_player_id=p_id)
             await battle_message.edit(
@@ -266,7 +330,16 @@ async def start_boss(ctx):
         alive_players = [p for p in session.players.values() if p["is_alive"]]
         target = random.choice(alive_players)
         
-        boss_damage = random.randint(session.boss_min_dmg, session.boss_max_dmg)
+        base_boss_damage = random.randint(session.boss_min_dmg, session.boss_max_dmg)
+        
+        # === ПРИМЕНЯЕМ БАФФ ЗАЩИТЫ КОМАНДЫ ПЕРЕД УДАРОМ БОССА ===
+        if session.def_buff_turns > 0:
+            boss_damage = max(1, int(base_boss_damage * (1 - session.def_buff_value)))
+            buff_notice = f" (Порезано щитом команды на {int(session.def_buff_value*100)}%)"
+        else:
+            boss_damage = base_boss_damage
+            buff_notice = ""
+            
         target["hp"] -= boss_damage
         
         death_text = ""
@@ -277,7 +350,7 @@ async def start_boss(ctx):
 
         img_file = generate_battle_image(current_player_id=None)
         await battle_message.edit(
-            content=f"👹 **Ход Босса!**\n{session.boss_name} яростно бьет {target['user'].mention} на **{boss_damage}** урона!{death_text}",
+            content=f"👹 **Ход Босса!**\n{session.boss_name} яростно бьет {target['user'].mention} на **{boss_damage}** урона!{buff_notice}{death_text}",
             attachments=[img_file],
             view=None
         )

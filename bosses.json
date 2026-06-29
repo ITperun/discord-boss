@@ -3,18 +3,24 @@
     "name": "Орк-Разрушитель",
     "hp": 600,
     "min_damage": 25,
-    "max_damage": 45
+    "max_damage": 45,
+    "physical_def": 0.25,
+    "magical_def": 0.05
   },
   {
     "name": "Древний Дракон",
     "hp": 900,
     "min_damage": 35,
-    "max_damage": 60
+    "max_damage": 60,
+    "physical_def": 0.30,
+    "magical_def": 0.30
   },
   {
     "name": "Проклятый Некромант",
     "hp": 500,
     "min_damage": 20,
-    "max_damage": 50
+    "max_damage": 50,
+    "physical_def": 0.05,
+    "magical_def": 0.40
   }
 ]

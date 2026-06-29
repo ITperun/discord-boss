@@ -1,22 +1,22 @@
 {
   "воин": [
-    {"name": "⚔️ Сильный удар", "id": "warrior_slash", "damage": 25, "heal": 0, "desc": "Наносит 25 урона"},
-    {"name": "🛡️ Глухая оборона", "id": "warrior_shield", "damage": 10, "heal": 0, "desc": "Защищает и наносит 10 урона"},
-    {"name": "💥 Казнь", "id": "warrior_execute", "damage": 30, "heal": 0, "desc": "Мощный удар на 30 урона"}
+    {"name": "⚔️ Сильный удар", "id": "warrior_slash", "damage": 25, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Физ. урон 25"},
+    {"name": "🛡️ Глухая оборона", "id": "warrior_shield", "damage": 10, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0.35, "buff_turns": 3, "desc": "Физ. урон 10. Снижает урон босса на 35% на 3 хода команды"},
+    {"name": "💥 Казнь", "id": "warrior_execute", "damage": 35, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Физ. урон 35"}
   ],
   "маг": [
-    {"name": "🔥 Огненный шар", "id": "mage_fireball", "damage": 35, "heal": 0, "desc": "Наносит 35 урона"},
-    {"name": "❄️ Ледяная стрела", "id": "mage_ice", "damage": 20, "heal": 0, "desc": "Наносит 20 урона"},
-    {"name": "⚡ Гроза", "id": "mage_lightning", "damage": 45, "heal": 0, "desc": "Мощная магия: 45 урона"}
+    {"name": "🔥 Огненный шар", "id": "mage_fireball", "damage": 35, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Маг. урон 35"},
+    {"name": "❄️ Ледяная стрела", "id": "mage_ice", "damage": 20, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Маг. урон 20"},
+    {"name": "⚡ Гроза", "id": "mage_lightning", "damage": 45, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Маг. урон 45"}
   ],
   "бард": [
-    {"name": "🎵 Песня исцеления", "id": "bard_heal", "damage": 5, "heal": 15, "desc": "Лечит ВСЮ команду на 15 HP, урон 5"},
-    {"name": "🎸 Соло на лютне", "id": "bard_solo", "damage": 20, "heal": 0, "desc": "Наносит 20 урона"},
-    {"name": "✨ Боевой марш", "id": "bard_buff", "damage": 15, "heal": 0, "desc": "Оглушает босса звуком: 15 урона"}
+    {"name": "🎵 Песня исцеления", "id": "bard_heal", "damage": 5, "dmg_type": "magical", "heal": 15, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Лечит команду на 15 HP, маг. урон 5"},
+    {"name": "🎸 Соло на лютне", "id": "bard_solo", "damage": 20, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Физ. урон 20"},
+    {"name": "✨ Боевой марш", "id": "bard_buff", "damage": 10, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0.30, "buff_def_pct": 0, "buff_turns": 4, "desc": "Маг. урон 10. Повышает урон команды на 30% на 4 хода"}
   ],
   "священник": [
-    {"name": "✨ Карающий свет", "id": "priest_smite", "damage": 20, "heal": 0, "desc": "Наносит 20 урона боссу"},
-    {"name": "❤️ Великое исцеление", "id": "priest_big_heal", "damage": 0, "heal": 35, "desc": "Мощно лечит команду на 35 HP, но не бьет босса"},
-    {"name": "🌟 Молитва защиты", "id": "priest_prayer", "damage": 10, "heal": 15, "desc": "Немного бьет босса (10) и лечит всех на 15 HP"}
+    {"name": "✨ Карающий свет", "id": "priest_smite", "damage": 20, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Маг. урон 20"},
+    {"name": "❤️ Великое исцеление", "id": "priest_big_heal", "damage": 0, "dmg_type": "none", "heal": 35, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "desc": "Лечит на 35 HP"},
+    {"name": "🌟 Молитва защиты", "id": "priest_prayer", "damage": 10, "dmg_type": "magical", "heal": 10, "buff_atk_pct": 0, "buff_def_pct": 0.25, "buff_turns": 3, "desc": "Лечит на 10, маг. урон 10, снижает урон босса на 25% на 3 хода"}
   ]
 }
