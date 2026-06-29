@@ -8,6 +8,7 @@ import io
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
+# Загружаем токен из скрытого файла .env
 load_dotenv()
 
 intents = discord.Intents.default()
@@ -36,19 +37,18 @@ class GameSession:
         self.boss_max_hp = 0
         self.boss_min_dmg = 0
         self.boss_max_dmg = 0
-        # Новые параметры защиты босса
         self.boss_phys_def = 0.0
         self.boss_mag_def = 0.0
         
         self.turn_order = []
         self.current_turn_index = 0
         
-        # === СИСТЕМА КОМАНДНЫХ БАФФОВ ===
-        self.atk_buff_value = 0.0   # Текущий процент бонуса к атаке (например, 0.3)
-        self.atk_buff_turns = 0     # Сколько ходов игроков осталось
+        # СИСТЕМА КОМАНДНЫХ БАФФОВ
+        self.atk_buff_value = 0.0   
+        self.atk_buff_turns = 0     
         
-        self.def_buff_value = 0.0   # На сколько снижается урон босса (например, 0.25)
-        self.def_buff_turns = 0     # Сколько ходов игроков осталось
+        self.def_buff_value = 0.0   
+        self.def_buff_turns = 0     
 
 session = GameSession()
 
@@ -80,15 +80,14 @@ def generate_battle_image(current_player_id=None):
     except FileNotFoundError:
         draw.rectangle([boss_x, boss_y, boss_x + boss_w, boss_y + boss_h], fill=(200, 50, 50, 255))
     
-    # Имя и параметры защиты босса в названии
-    draw.text((boss_x, boss_y - 45), f"{session.boss_name} (🛡️Физ:{int(session.boss_phys_def*100)}% 🔮Маг:{int(session.boss_mag_def*100)}%)", fill="white", font=font_name)
+    draw.text((boss_x, boss_y - 40), f"{session.boss_name} (🛡️Физ:{int(session.boss_phys_def*100)}% 🔮Маг:{int(session.boss_mag_def*100)}%)", fill="white", font=font_name)
     draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20))
     
     hp_percent = session.boss_hp / session.boss_max_hp
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
     draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp}", fill="white", font=font_hp)
 
-    # Отрисовка активных баффов на экране (сверху по центру)
+    # Отображение баффов на экране
     buff_y = 20
     if session.atk_buff_turns > 0:
         draw.text((320, buff_y), f"⚔️ Бонус Атаки: +{int(session.atk_buff_value*100)}% ({session.atk_buff_turns} ходов)", fill="#FFD700", font=font_name)
@@ -175,9 +174,9 @@ class TurnButtons(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f'✅ Бот {bot.user} запущен и готов к RPG-бою!')
+    print(f'✅ Бот {bot.user} успешно запущен!')
 
-@bot.command(name="старт-секрет")
+@bot.command(name="старт")
 async def start_boss(ctx):
     """Команда для запуска лобби и проведения боя"""
     global session, BOSSES_LIST, CLASS_SKILLS, battle_message
@@ -197,11 +196,9 @@ async def start_boss(ctx):
     session.boss_max_hp = current_boss["hp"]
     session.boss_min_dmg = current_boss["min_damage"]
     session.boss_max_dmg = current_boss["max_damage"]
-    # Загружаем деф босса
     session.boss_phys_def = current_boss.get("physical_def", 0.0)
     session.boss_mag_def = current_boss.get("magical_def", 0.0)
     
-    # Сбрасываем баффы
     session.atk_buff_value = 0.0
     session.atk_buff_turns = 0
     session.def_buff_value = 0.0
@@ -209,11 +206,12 @@ async def start_boss(ctx):
     
     await ctx.send(
         f"🚨 **ВНИМАНИЕ! Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!** 🚨\n"
-        f"У вас есть 30 секунд, чтобы присоединиться!\n"
+        f"У вас есть 1 минута, чтобы присоединиться!\n"
         f"Пишите: `!присоединиться [класс]`"
     )
 
-    await asyncio.sleep(30)
+    # ⏱️ Ждем 60 секунд вместо 30 для набора команды
+    await asyncio.sleep(60)
 
     if len(session.players) == 0:
         session.state = "IDLE"
@@ -262,51 +260,43 @@ async def start_boss(ctx):
                 dmg_type = view.chosen_skill.get("dmg_type", "none")
                 heal_amount = view.chosen_skill["heal"]
                 
-                # Параметры новых баффов из JSON
                 b_atk_pct = view.chosen_skill.get("buff_atk_pct", 0.0)
                 b_def_pct = view.chosen_skill.get("buff_def_pct", 0.0)
                 b_turns = view.chosen_skill.get("buff_turns", 0)
                 
                 action_text = f"использует **{skill_name}**"
                 
-                # --- РАСЧЕТ УРОНА С УЧЕТОМ БАФФОВ И ЗАЩИТЫ БОССА ---
                 if base_damage > 0:
-                    # Применяем бафф на атаку команды, если он активен
                     if session.atk_buff_turns > 0:
                         base_damage = int(base_damage * (1 + session.atk_buff_value))
                     
-                    # Применяем защиту босса в зависимости от типа урона
                     if dmg_type == "physical":
                         damage = max(1, int(base_damage * (1 - session.boss_phys_def)))
-                        action_text += f" (Физический урон, порезано защитой босса)"
+                        action_text += f" (Физический урон)"
                     elif dmg_type == "magical":
                         damage = max(1, int(base_damage * (1 - session.boss_mag_def)))
-                        action_text += f" (Магический урон, порезано защитой босса)"
+                        action_text += f" (Магический урон)"
                     else:
                         damage = base_damage
                 
-                # Обработка лечения
                 if heal_amount > 0:
                     action_text += f" (+{heal_amount} HP команде!)"
                     for p in session.players.values():
                         if p["is_alive"]:
                             p["hp"] = min(100, p["hp"] + heal_amount)
 
-                # НАКЛАДЫВАЕМ НОВЫЕ БАФФЫ (если они есть у скилла)
                 if b_turns > 0:
                     if b_atk_pct > 0:
                         session.atk_buff_value = b_atk_pct
                         session.atk_buff_turns = b_turns
-                        action_text += f"\n✨ Наложен бафф: +{int(b_atk_pct*100)}% к атаке всей команды на {b_turns} ходов игроков!"
+                        action_text += f"\n✨ Бафф: +{int(b_atk_pct*100)}% к атаке команды на {b_turns} ходов!"
                     if b_def_pct > 0:
                         session.def_buff_value = b_def_pct
                         session.def_buff_turns = b_turns
-                        action_text += f"\n🛡️ Наложен щит: входящий урон от босса снижен на {int(b_def_pct*100)}% на {b_turns} ходов игроков!"
+                        action_text += f"\n🛡️ Щит: урон босса снижен на {int(b_def_pct*100)}% на {b_turns} ходов!"
 
-            # Наносим урон боссу
             session.boss_hp = max(0, session.boss_hp - damage)
             
-            # === СГОРАНИЕ БАФФОВ ПОСЛЕ ХОДА ИГРОКА ===
             if session.atk_buff_turns > 0:
                 session.atk_buff_turns -= 1
             if session.def_buff_turns > 0:
@@ -318,7 +308,9 @@ async def start_boss(ctx):
                 attachments=[img_file],
                 view=None
             )
-            await asyncio.sleep(2.5)
+            
+            # ⏱️ ЗАДЕРЖКА ПОСЛЕ ХОДА ИГРОКА: 5 секунд для чтения логов раунда
+            await asyncio.sleep(5.0)
 
             if session.boss_hp <= 0:
                 break
@@ -332,10 +324,9 @@ async def start_boss(ctx):
         
         base_boss_damage = random.randint(session.boss_min_dmg, session.boss_max_dmg)
         
-        # === ПРИМЕНЯЕМ БАФФ ЗАЩИТЫ КОМАНДЫ ПЕРЕД УДАРОМ БОССА ===
         if session.def_buff_turns > 0:
             boss_damage = max(1, int(base_boss_damage * (1 - session.def_buff_value)))
-            buff_notice = f" (Порезано щитом команды на {int(session.def_buff_value*100)}%)"
+            buff_notice = f" (Снижено щитом на {int(session.def_buff_value*100)}%)"
         else:
             boss_damage = base_boss_damage
             buff_notice = ""
@@ -355,7 +346,8 @@ async def start_boss(ctx):
             view=None
         )
         
-        await asyncio.sleep(3)
+        # ⏱️ ЗАДЕРЖКА ПОСЛЕ ХОДА БОССА: 5 секунд для чтения
+        await asyncio.sleep(5.0)
         round_number += 1
 
     # === ФИНАЛ БИТВЫ ===
