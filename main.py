@@ -25,10 +25,11 @@ def load_game_data():
         bosses_data = json.load(f)
     return skills_data, bosses_data
 
+# Загружаем конфигурацию
 CLASS_SKILLS, BOSSES_LIST = load_game_data()
 AVAILABLE_CLASSES = list(CLASS_SKILLS.keys())
 
-# === ✂️ СИСТЕМА ДИНАМИЧЕСКОЙ НАРЕЗКИ СПРАЙТОВ ===
+# === ✂️ СИСТЕМА ДИНАМИЧЕСКОЙ НАРЕЗКИ СПРАЙТОВ ИГРОКОВ ===
 def get_player_sprite(class_name):
     sheet_path = "assets/маг, воин, священник, рейнджер, бард, некромант.png"
     if not os.path.exists(sheet_path):
@@ -68,7 +69,6 @@ def get_player_sprite(class_name):
         print(f"Ошибка нарезки спрайта: {e}")
         return None
 
-
 class GameSession:
     def __init__(self):
         self.state = "IDLE"
@@ -94,7 +94,7 @@ class GameSession:
 
 session = GameSession()
 
-# === 🎉 СТАРЫЙ УДОБНЫЙ ИНТЕРФЕЙС (Рендер 800x400) ===
+# === 🎉 ФУНКЦИЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЯ БИТВЫ ===
 def generate_battle_image(current_player_id=None, boss_action_ready=False):
     try:
         bg = Image.open("assets/background.png").convert("RGBA")
@@ -111,22 +111,34 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         font_name = ImageFont.load_default()
         font_hp = ImageFont.load_default()
 
-    # Загрузка босса
+    # Динамическая загрузка уникального ассета босса
     boss_filename = f"assets/{session.boss_name.lower().replace(' ', '-')}.png"
     if not os.path.exists(boss_filename):
         boss_filename = "assets/boss.png"
 
-    boss_w, boss_h = 200, 200
-    boss_x, boss_y = 40, 160
+    boss_y = 160
     
     try:
         boss_img = Image.open(boss_filename).convert("RGBA")
+        
+        # 📐 АВТОМАТИЧЕСКИЙ РАСЧЕТ ПРОПОРЦИЙ БОССА
+        boss_target_h = 200  # Желаемая высота босса на экране
+        aspect = boss_img.width / boss_img.height
+        boss_w = int(boss_target_h * aspect)  # Ширина подстроится автоматически
+        boss_h = boss_target_h
+        
+        # Центрируем босса по левой стороне тропинки (базовая позиция по X = 40)
+        # Если босс широкий, он расширится вправо, не ломая левый край
+        boss_x = 40
+        
         boss_img = boss_img.resize((boss_w, boss_h), Image.Resampling.NEAREST)
         bg.paste(boss_img, (boss_x, boss_y), boss_img)
     except FileNotFoundError:
+        boss_w, boss_h = 200, 200
+        boss_x = 40
         draw.rectangle([boss_x, boss_y, boss_x + boss_w, boss_y + boss_h], fill=(200, 50, 50, 255))
     
-    # Текст состояния босса
+    # Индикатор ярости/подготовки атаки босса (выровнен по boss_x)
     alive_count = len([p for p in session.players.values() if p["is_alive"]])
     if alive_count >= 5: current_max_cd = 3
     elif alive_count >= 3: current_max_cd = 2
@@ -137,6 +149,7 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     draw.text((boss_x, boss_y - 60), f"{session.boss_name} (🛡️{int(session.boss_phys_def*100)}% 🔮{int(session.boss_mag_def*100)}%)", fill="white", font=font_name)
     draw.text((boss_x, boss_y - 45), cd_text, fill="orange" if boss_action_ready else "#87CEEB", font=font_name)
     
+    # Полоска ХП босса (подстраивается под его динамическую ширину boss_w)
     draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20))
     hp_percent = session.boss_hp / session.boss_max_hp
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
@@ -154,9 +167,9 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     if session.def_buff_turns > 0:
         draw.text((320, buff_y), f"🛡️ Щит: +{int(session.def_buff_value*100)}% ({session.def_buff_turns}х)", fill="#00FFFF", font=font_name)
 
-    # 👥 Отрисовка отряда участников (📏 Расстояние 10 пикселей по горизонтали)
+    # Отрисовка отряда участников (📏 ровно 10 пикселей чистого зазора по горизонтали)
     p_w, p_h = 75, 75       
-    start_x = 290           
+    start_x = 430           
     spacing_x = 85          # 75px ширина иконки + 10px зазор = шаг 85px
     base_y = 235           
 
@@ -175,14 +188,12 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
             x -= 30  
             y += 15  
             
-        # 🔥 Получаем нарезанный из общей картинки спрайт класса
         p_img = get_player_sprite(player['class'])
         
         if p_img is not None:
             p_img = p_img.resize((p_w, p_h), Image.Resampling.NEAREST)
             bg.paste(p_img, (x, y), p_img)
         else:
-            # Цветная заглушка на случай, если файла со спрайтами нет
             color = (80, 80, 220) if player['class'] == 'бард' else (220, 180, 60)
             draw.rectangle([x, y, x + p_w, y + p_h], fill=color)
 
@@ -214,6 +225,7 @@ class TurnButtons(discord.ui.View):
         player_class = player["class"]
         skills = CLASS_SKILLS.get(player_class, [])
         
+        # Кнопки боевых навыков
         for skill in skills:
             button = discord.ui.Button(
                 label=skill["name"], 
@@ -223,8 +235,9 @@ class TurnButtons(discord.ui.View):
             button.callback = self.make_callback(skill)
             self.add_item(button)
             
+        # Дополнительная кнопка скрытой персональной подсказки
         info_button = discord.ui.Button(
-            label="ℹ️ Описание навыки",
+            label="ℹ️ Описание навыков",
             custom_id=f"info_{player['id']}",
             style=discord.ButtonStyle.secondary
         )
@@ -246,6 +259,7 @@ class TurnButtons(discord.ui.View):
             
         return callback
 
+    # Функция отправки эфемерального (скрытого) сообщения
     async def show_skills_info(self, interaction: discord.Interaction):
         if str(interaction.user.id) != str(self.player["id"]):
             await interaction.response.send_message("❌ Вы можете смотреть описание только в свой ход!", ephemeral=True)
@@ -278,11 +292,11 @@ class TurnButtons(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f'✅ Бот {bot.user} запущен и готов нарезать спрайты!')
+    print(f'✅ Бот {bot.user} запущен и готов к RPG рейдам!')
 
 @bot.command(name="старт")
 async def start_boss(ctx):
-    """Команда для запуска пошагового боя"""
+    """Команда для запуска пошагового боя с яростью босса и анти-абузом"""
     global session, BOSSES_LIST, CLASS_SKILLS, battle_message
     
     CLASS_SKILLS, BOSSES_LIST = load_game_data()
@@ -303,6 +317,7 @@ async def start_boss(ctx):
     session.boss_mag_def = current_boss.get("magical_def", 0.0)
     session.boss_debuffs.clear()
     
+    # Сброс таймеров и накопления иммунитета
     session.boss_cooldown_counter = 0
     session.boss_slow_stacks = 0
     session.atk_buff_value = 0.0
@@ -362,6 +377,7 @@ async def start_boss(ctx):
             session.turn_order.append(session.turn_order.pop(0))
             continue
             
+        # === ⏳ ТИКИ ДЕБАФФОВ НА НАЧАЛО ХОДА ИГРОКА ===
         debuff_damage = 0
         debuff_notes = ""
         active_p_debuffs = player.get("debuffs", [])
@@ -445,6 +461,7 @@ async def start_boss(ctx):
                     session.def_buff_value = b_def_pct
                     session.def_buff_turns = b_turns
 
+            # === 🎯 НАКЛАДЫВАНИЕ ДЕБАФФОВ НА БОССА ===
             if skill_debuff:
                 db_type = skill_debuff["type"]
                 
@@ -492,8 +509,9 @@ async def start_boss(ctx):
                 
         session.boss_hp = max(0, session.boss_hp - boss_tick_damage)
 
-        # Счетчик ходов босса
+        # === 🔄 СЧЕТЧИК ХОДОВ БОССА С ДИНАМИЧЕСКИМ УСКОРЕНИЕМ (ЯРОСТЬ) ===
         current_alive_count = len([p for p in session.players.values() if p["is_alive"]])
+        
         if current_alive_count >= 5: max_boss_cooldown = 3
         elif current_alive_count >= 3: max_boss_cooldown = 2
         else: max_boss_cooldown = 1
@@ -511,6 +529,7 @@ async def start_boss(ctx):
             else:
                 boss_trigger = False
 
+        # Походивший отправляется в конец очереди
         session.turn_order.append(session.turn_order.pop(0))
         
         img_file = generate_battle_image(current_player_id=None, boss_action_ready=boss_trigger)
@@ -545,12 +564,14 @@ async def start_boss(ctx):
             for target in targets_to_hit:
                 base_boss_dmg = random.randint(boss_atk["min_damage"], boss_atk["max_damage"])
                 
+                # Ослабление атаки босса
                 boss_atk_mod = 1.0
                 for d in session.boss_debuffs:
                     if d["type"] == "ослабление атаки": 
                         boss_atk_mod -= d.get("power_pct", 0.0)
                 base_boss_dmg = int(base_boss_dmg * max(0.1, boss_atk_mod))
 
+                # Снижение щитом команды
                 if session.def_buff_turns > 0:
                     boss_damage = max(1, int(base_boss_dmg * (1 - session.def_buff_value)))
                 else:
