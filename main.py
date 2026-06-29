@@ -26,7 +26,7 @@ def load_game_data():
         bosses_data = json.load(f)
     return skills_data, bosses_data
 
-# Загружаем конфигурацию игры
+# Загружаем конфигурацию
 CLASS_SKILLS, BOSSES_LIST = load_game_data()
 AVAILABLE_CLASSES = list(CLASS_SKILLS.keys())
 
@@ -46,7 +46,6 @@ session = GameSession()
 
 # === 🎉 ФУНКЦИЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЯ БИТВЫ ===
 def generate_battle_image(current_player_id=None):
-    # 1. Открываем фоновое изображение
     try:
         bg = Image.open("assets/background.png").convert("RGBA")
     except FileNotFoundError:
@@ -54,18 +53,17 @@ def generate_battle_image(current_player_id=None):
         
     draw = ImageDraw.Draw(bg)
     
-    # 2. Загружаем шрифт Linux с поддержкой русского языка (DejaVu)
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     try:
-        font_name = ImageFont.truetype(font_path, 14)  # Для ников и имени босса
-        font_hp = ImageFont.truetype(font_path, 11)    # Для цифр внутри полосок ХП
+        font_name = ImageFont.truetype(font_path, 14)
+        font_hp = ImageFont.truetype(font_path, 11)
     except IOError:
         font_name = ImageFont.load_default()
         font_hp = ImageFont.load_default()
 
-    # 3. ОТРИСОВКА БОССА
-    boss_w, boss_h = 200, 200  # Компактный размер босса
-    boss_x, boss_y = 40, 160   # Позиция на левой части тропинки
+    # Отрисовка босса
+    boss_w, boss_h = 200, 200
+    boss_x, boss_y = 40, 160
     
     try:
         boss_img = Image.open("assets/boss.png").convert("RGBA")
@@ -74,19 +72,18 @@ def generate_battle_image(current_player_id=None):
     except FileNotFoundError:
         draw.rectangle([boss_x, boss_y, boss_x + boss_w, boss_y + boss_h], fill=(200, 50, 50, 255))
     
-    # Полоска ХП Босса над его головой
     draw.text((boss_x, boss_y - 40), f"{session.boss_name}", fill="white", font=font_name)
-    draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20)) # Задник
+    draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20))
     
     hp_percent = session.boss_hp / session.boss_max_hp
-    draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40)) # Красная шкала
+    draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
     draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp}", fill="white", font=font_hp)
 
-    # 4. ОТРИСОВКА ИГРОКОВ
-    p_w, p_h = 80, 80      # Размер картинок персонажей
-    start_x = 420          # Начало строя
-    spacing_x = 90         # Расстояние между игроками в ряду
-    base_y = 240           # Опустили игроков на тропинку
+    # Отрисовка игроков
+    p_w, p_h = 80, 80
+    start_x = 420
+    spacing_x = 90
+    base_y = 240
     
     for idx, p_id in enumerate(session.turn_order):
         player = session.players[p_id]
@@ -94,11 +91,9 @@ def generate_battle_image(current_player_id=None):
             continue
             
         is_his_turn = (p_id == current_player_id)
-        
         x = start_x + (idx * spacing_x)
         y = base_y
         
-        # Эффект шага вперед: активный игрок выдвигается влево к боссу и чуть вниз
         if is_his_turn:
             x -= 40  
             y += 15  
@@ -111,17 +106,14 @@ def generate_battle_image(current_player_id=None):
             color = (80, 80, 220) if player['class'] == 'бард' else (220, 180, 60)
             draw.rectangle([x, y, x + p_w, y + p_h], fill=color)
 
-        # Никнейм над головой игрока
         display_name = player["user"].display_name[:12]
-        name_color = "#FFD700" if is_his_turn else "white"  # Золотой цвет во время своего хода
+        name_color = "#FFD700" if is_his_turn else "white"
         draw.text((x, y - 35), display_name, fill=name_color, font=font_name)
         
-        # Полоска ХП над головой игрока (выровнена ровно по ширине персонажа `p_w`)
         draw.rectangle([x, y - 15, x + p_w, y - 8], fill=(60, 20, 20))
         p_hp_percent = player["hp"] / 100
-        draw.rectangle([x, y - 15, x + int(p_w * p_hp_percent), y - 8], fill=(40, 220, 40)) # Зеленая шкала
+        draw.rectangle([x, y - 15, x + int(p_w * p_hp_percent), y - 8], fill=(40, 220, 40))
 
-    # Сохраняем изображение в буфер памяти
     img_byte_arr = io.BytesIO()
     bg.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -167,14 +159,13 @@ class TurnButtons(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f'✅ Бот {bot.user} успешно запущен и готов обрабатывать JSON!')
+    print(f'✅ Бот {bot.user} успешно запущен!')
 
 @bot.command(name="старт")
 async def start_boss(ctx):
-    """Команда для запуска лобби и проведения пошагового боя с картинкой"""
+    """Команда для запуска лобби и проведения боя"""
     global session, BOSSES_LIST, CLASS_SKILLS, battle_message
     
-    # Обновляем данные на лету
     CLASS_SKILLS, BOSSES_LIST = load_game_data()
     
     if session.state != "IDLE":
@@ -205,8 +196,6 @@ async def start_boss(ctx):
         return
 
     session.state = "BATTLING"
-    
-    # Генерируем случайную очередь ходов игроков
     session.turn_order = list(session.players.keys())
     random.shuffle(session.turn_order)
     
@@ -243,39 +232,19 @@ async def start_boss(ctx):
             if view.chosen_skill is None:
                 action_text = "пропустил свой ход! 💤"
             else:
-                skill_id = view.chosen_skill["id"]
+                # === УМНАЯ ДИНАМИЧЕСКАЯ ЛОГИКА ИЗ JSON ===
+                skill_name = view.chosen_skill["name"]
+                damage = view.chosen_skill["damage"]
+                heal_amount = view.chosen_skill["heal"]
                 
-                # Хэндлеры навыков
-                if skill_id == "warrior_slash":
-                    damage = 25
-                    action_text = "использует **⚔️ Сильный удар**"
-                elif skill_id == "warrior_shield":
-                    damage = 10
-                    action_text = "использует **🛡️ Глухую оборону**"
-                elif skill_id == "warrior_execute":
-                    damage = random.randint(10, 40)
-                    action_text = "проводит **💥 Казнь**"
-                elif skill_id == "mage_fireball":
-                    damage = 35
-                    action_text = "выпускает **🔥 Огненный шар**"
-                elif skill_id == "mage_ice":
-                    damage = 20
-                    action_text = "кастует **❄️ Ледяную стрелу**"
-                elif skill_id == "mage_lightning":
-                    damage = 45
-                    action_text = "обрушивает **⚡ Грозу**"
-                elif skill_id == "bard_heal":
-                    damage = 5
-                    action_text = "поет **🎵 Песню исцеления** (+15 HP команде)!"
+                action_text = f"использует **{skill_name}**"
+                
+                # Если у навыка есть лечение, лечим живых союзников
+                if heal_amount > 0:
+                    action_text += f" (+{heal_amount} HP команде!)"
                     for p in session.players.values():
                         if p["is_alive"]:
-                            p["hp"] = min(100, p["hp"] + 15)
-                elif skill_id == "bard_solo":
-                    damage = 20
-                    action_text = "играет **🎸 Соло на лютне**"
-                elif skill_id == "bard_buff":
-                    damage = 15
-                    action_text = "заводит **✨ Боевой марш**"
+                            p["hp"] = min(100, p["hp"] + heal_amount)
 
             session.boss_hp = max(0, session.boss_hp - damage)
             
