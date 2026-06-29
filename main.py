@@ -95,11 +95,11 @@ def generate_battle_image(current_player_id=None):
     if session.def_buff_turns > 0:
         draw.text((320, buff_y), f"🛡️ Защита команды: +{int(session.def_buff_value*100)}% ({session.def_buff_turns} ходов)", fill="#00FFFF", font=font_name)
 
-    # Отрисовка игроков
-    p_w, p_h = 80, 80
-    start_x = 420
-    spacing_x = 90
-    base_y = 240
+    # Отрисовка игроков и NPC
+    p_w, p_h = 64, 64       # Немного уменьшим ширину, чтобы 7 персонажей влезли на экран
+    start_x = 340           # Сдвигаем старт левее, чтобы все поместились
+    spacing_x = 65          # Чуть плотнее расставляем персонажей
+    base_y = 240           
     
     for idx, p_id in enumerate(session.turn_order):
         player = session.players[p_id]
@@ -111,7 +111,7 @@ def generate_battle_image(current_player_id=None):
         y = base_y
         
         if is_his_turn:
-            x -= 40  
+            x -= 25  
             y += 15  
             
         try:
@@ -122,7 +122,8 @@ def generate_battle_image(current_player_id=None):
             color = (80, 80, 220) if player['class'] == 'бард' else (220, 180, 60)
             draw.rectangle([x, y, x + p_w, y + p_h], fill=color)
 
-        display_name = player["user"].display_name[:12]
+        # Вывод имени (у ботов отображается строка вроде npc_bot1)
+        display_name = player["name"][:10]
         name_color = "#FFD700" if is_his_turn else "white"
         draw.text((x, y - 35), display_name, fill=name_color, font=font_name)
         
@@ -156,7 +157,7 @@ class TurnButtons(discord.ui.View):
 
     def make_callback(self, skill):
         async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.player["user"].id:
+            if interaction.user.id != self.player["id"]:
                 await interaction.response.send_message("❌ Сейчас не ваш ход!", ephemeral=True)
                 return
                 
@@ -210,13 +211,30 @@ async def start_boss(ctx):
         f"Пишите: `!присоединиться [класс]`"
     )
 
-    # ⏱️ Ждем 60 секунд вместо 30 для набора команды
     await asyncio.sleep(60)
 
-    if len(session.players) == 0:
+    # 🤖 Проверяем, зашел ли хоть один живой человек
+    real_players_count = len(session.players)
+    if real_players_count == 0:
         session.state = "IDLE"
-        await ctx.send(f"😔 Никто не пришел на битву.")
+        await ctx.send(f"😔 Никто из игроков не пришел на битву. Рейд отменен.")
         return
+
+    # 🤖 Заполняем оставшиеся слоты ботами до 7 участников
+    total_slots = 7
+    if real_players_count < total_slots:
+        needed_bots = total_slots - real_players_count
+        for i in range(1, needed_bots + 1):
+            bot_id = f"npc_bot{i}"
+            bot_class = random.choice(AVAILABLE_CLASSES)
+            session.players[bot_id] = {
+                "id": bot_id,
+                "name": f"npc_bot{i}",
+                "class": bot_class,
+                "hp": 100,
+                "is_alive": True,
+                "is_npc": True # Флаг, отличающий бота от человека
+            }
 
     session.state = "BATTLING"
     session.turn_order = list(session.players.keys())
@@ -232,38 +250,55 @@ async def start_boss(ctx):
         if not alive_players:
             break
 
-        # 1. ПОШАГОВЫЙ ХОД ИГРОКОВ
+        # 1. ПОШАГОВЫЙ ХОД УЧАСТНИКОВ
         for p_id in session.turn_order:
             player = session.players[p_id]
             if not player["is_alive"]:
                 continue
                 
             img_file = generate_battle_image(current_player_id=p_id)
-            view = TurnButtons(player, timeout=30)
+            chosen_skill = None
             
-            await battle_message.edit(
-                content=f"🔹 **РАУНД {round_number}** 🔹\n🛑 **Ход игрока {player['user'].mention} ({player['class']}).** Выберите навык:",
-                attachments=[img_file], 
-                view=view
-            )
-            
-            await view.wait()
-            
+            # --- РАЗДЕЛЕНИЕ ХОДА: ИГРОК ИЛИ NPC ---
+            if player.get("is_npc"):
+                # Логика бота: берет случайный навык из JSON для своего класса
+                available_npc_skills = CLASS_SKILLS.get(player["class"], [])
+                chosen_skill = random.choice(available_npc_skills)
+                
+                await battle_message.edit(
+                    content=f"🔹 **РАУНД {round_number}** 🔹\n🤖 **Ходит {player['name']} ({player['class']}).** Думает...",
+                    attachments=[img_file], 
+                    view=None
+                )
+                await asyncio.sleep(1.5) # Небольшая пауза, имитирующая раздумья NPC
+            else:
+                # Логика человека: показываем кнопки управления
+                view = TurnButtons(player, timeout=30)
+                await battle_message.edit(
+                    content=f"🔹 **РАУНД {round_number}** 🔹\n🛑 **Ход игрока <@{player['id']}> ({player['class']}).** Выберите навык:",
+                    attachments=[img_file], 
+                    view=view
+                )
+                await view.wait()
+                chosen_skill = view.chosen_skill
+
             damage = 0
             action_text = ""
             
-            if view.chosen_skill is None:
-                action_text = "пропустил свой ход! 💤"
+            if chosen_skill is None:
+                action_text = f"пропустил свой ход! 💤"
             else:
-                skill_name = view.chosen_skill["name"]
-                base_damage = view.chosen_skill["damage"]
-                dmg_type = view.chosen_skill.get("dmg_type", "none")
-                heal_amount = view.chosen_skill["heal"]
+                skill_name = chosen_skill["name"]
+                base_damage = chosen_skill["damage"]
+                dmg_type = chosen_skill.get("dmg_type", "none")
+                heal_amount = chosen_skill["heal"]
                 
-                b_atk_pct = view.chosen_skill.get("buff_atk_pct", 0.0)
-                b_def_pct = view.chosen_skill.get("buff_def_pct", 0.0)
-                b_turns = view.chosen_skill.get("buff_turns", 0)
+                b_atk_pct = chosen_skill.get("buff_atk_pct", 0.0)
+                b_def_pct = chosen_skill.get("buff_def_pct", 0.0)
+                b_turns = chosen_skill.get("buff_turns", 0)
                 
+                # Упоминаем через @ только людей, ботов пишем текстом
+                display_mention = player['name'] if player.get("is_npc") else f"<@{player['id']}>"
                 action_text = f"использует **{skill_name}**"
                 
                 if base_damage > 0:
@@ -303,13 +338,13 @@ async def start_boss(ctx):
                 session.def_buff_turns -= 1
             
             img_file = generate_battle_image(current_player_id=p_id)
+            display_mention = player['name'] if player.get("is_npc") else f"<@{player['id']}>"
             await battle_message.edit(
-                content=f"⚔️ {player['user'].mention} {action_text} и наносит **{damage}** урона! (У босса осталось: {session.boss_hp} HP)", 
+                content=f"⚔️ {display_mention} {action_text} и наносит **{damage}** урона! (У босса осталось: {session.boss_hp} HP)", 
                 attachments=[img_file],
                 view=None
             )
             
-            # ⏱️ ЗАДЕРЖКА ПОСЛЕ ХОДА ИГРОКА: 5 секунд для чтения логов раунда
             await asyncio.sleep(5.0)
 
             if session.boss_hp <= 0:
@@ -333,20 +368,20 @@ async def start_boss(ctx):
             
         target["hp"] -= boss_damage
         
+        target_mention = target['name'] if target.get("is_npc") else f"<@{target['id']}>"
         death_text = ""
         if target["hp"] <= 0:
             target["hp"] = 0
             target["is_alive"] = False
-            death_text = f"\n💀 {target['user'].mention} погиб в бою!"
+            death_text = f"\n💀 {target_mention} погиб в бою!"
 
         img_file = generate_battle_image(current_player_id=None)
         await battle_message.edit(
-            content=f"👹 **Ход Босса!**\n{session.boss_name} яростно бьет {target['user'].mention} на **{boss_damage}** урона!{buff_notice}{death_text}",
+            content=f"👹 **Ход Босса!**\n{session.boss_name} яростно бьет {target_mention} на **{boss_damage}** урона!{buff_notice}{death_text}",
             attachments=[img_file],
             view=None
         )
         
-        # ⏱️ ЗАДЕРЖКА ПОСЛЕ ХОДА БОССА: 5 секунд для чтения
         await asyncio.sleep(5.0)
         round_number += 1
 
@@ -378,15 +413,17 @@ async def join_game(ctx, role: str = None):
     role = role.lower()
     user = ctx.author
 
-    if user.id in session.players:
-        await ctx.send(f"⚠️ {user.mention}, вы уже в строю как **{session.players[user.id]['class']}**!")
+    if str(user.id) in session.players:
+        await ctx.send(f"⚠️ {user.mention}, вы уже в строю как **{session.players[str(user.id)]['class']}**!")
         return
 
-    session.players[user.id] = {
-        "user": user,
+    session.players[str(user.id)] = {
+        "id": user.id,
+        "name": user.display_name,
         "class": role,
         "hp": 100,
-        "is_alive": True
+        "is_alive": True,
+        "is_npc": False
     }
     
     await ctx.send(f"✅ {user.mention} присоединился к рейду в роли **{role}**!")
