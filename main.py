@@ -4,10 +4,11 @@ import asyncio
 import random
 import os
 import json
-from dotenv import load_dotenv
-from PIL import Image, ImageDraw, ImageFont  # Импортируем библиотеки для рисования
 import io
+from dotenv import load_dotenv
+from PIL import Image, ImageDraw, ImageFont
 
+# Загружаем токен из скрытого файла .env
 load_dotenv()
 
 intents = discord.Intents.default()
@@ -15,7 +16,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Глобальная переменная для хранения ID главного сообщения битвы
+# Глобальная переменная для хранения главного сообщения битвы
 battle_message = None
 
 def load_game_data():
@@ -25,6 +26,7 @@ def load_game_data():
         bosses_data = json.load(f)
     return skills_data, bosses_data
 
+# Загружаем конфигурацию игры
 CLASS_SKILLS, BOSSES_LIST = load_game_data()
 AVAILABLE_CLASSES = list(CLASS_SKILLS.keys())
 
@@ -37,84 +39,89 @@ class GameSession:
         self.boss_max_hp = 0
         self.boss_min_dmg = 0
         self.boss_max_dmg = 0
-        self.turn_order = []  # Очередь ходов игроков
+        self.turn_order = []
         self.current_turn_index = 0
 
 session = GameSession()
 
 # === 🎉 ФУНКЦИЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЯ БИТВЫ ===
 def generate_battle_image(current_player_id=None):
-    # Открываем фоновое изображение
+    # 1. Открываем фоновое изображение
     try:
         bg = Image.open("assets/background.png").convert("RGBA")
     except FileNotFoundError:
-        # Если графики нет, создаем временную заглушку (800x400)
         bg = Image.new("RGBA", (800, 400), (40, 40, 40, 255))
         
     draw = ImageDraw.Draw(bg)
     
-    # Пытаемся загрузить шрифт для ников (если нет, берется дефолтный)
+    # 2. Загружаем шрифт Linux с поддержкой русского языка (DejaVu)
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     try:
-        font = ImageFont.truetype("Arial.ttf", 16)
+        font_name = ImageFont.truetype(font_path, 14)  # Для ников и имени босса
+        font_hp = ImageFont.truetype(font_path, 11)    # Для цифр внутри полосок ХП
     except IOError:
-        font = ImageFont.load_default()
+        font_name = ImageFont.load_default()
+        font_hp = ImageFont.load_default()
 
-    # 1. Отрисовка Босса (слева)
+    # 3. ОТРИСОВКА БОССА
+    boss_w, boss_h = 200, 200  # Компактный размер босса
+    boss_x, boss_y = 40, 160   # Позиция на левой части тропинки
+    
     try:
         boss_img = Image.open("assets/boss.png").convert("RGBA")
-        bg.paste(boss_img, (50, 150), boss_img)
+        boss_img = boss_img.resize((boss_w, boss_h), Image.Resampling.NEAREST)
+        bg.paste(boss_img, (boss_x, boss_y), boss_img)
     except FileNotFoundError:
-        # Заглушка босса, если файла нет
-        draw.rectangle([50, 150, 200, 300], fill=(200, 50, 50, 255))
+        draw.rectangle([boss_x, boss_y, boss_x + boss_w, boss_y + boss_h], fill=(200, 50, 50, 255))
     
-    # Полоска ХП Босса сверху его головы
-    draw.text((50, 110), f"{session.boss_name}", fill="white", font=font)
-    draw.rectangle([50, 130, 200, 140], fill=(100, 0, 0)) # Задник ХП
+    # Полоска ХП Босса над его головой
+    draw.text((boss_x, boss_y - 40), f"{session.boss_name}", fill="white", font=font_name)
+    draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20)) # Задник
+    
     hp_percent = session.boss_hp / session.boss_max_hp
-    draw.rectangle([50, 130, int(50 + 150 * hp_percent), 140], fill=(255, 0, 0)) # Красная полоска
+    draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40)) # Красная шкала
+    draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp}", fill="white", font=font_hp)
 
-    # 2. Отрисовка игроков (справа, выстраиваются в ряд)
-    # Координаты начала строя игроков
-    start_x = 450
-    spacing_x = 80 # Расстояние между игроками в очереди
+    # 4. ОТРИСОВКА ИГРОКОВ
+    p_w, p_h = 80, 80      # Размер картинок персонажей
+    start_x = 420          # Начало строя
+    spacing_x = 90         # Расстояние между игроками в ряду
+    base_y = 240           # Опустили игроков на тропинку
     
     for idx, p_id in enumerate(session.turn_order):
         player = session.players[p_id]
         if not player["is_alive"]:
             continue
             
-        # Определяем позицию. Если это текущий ходящий игрок — выдвигаем его вперед (ближе к боссу)
         is_his_turn = (p_id == current_player_id)
         
         x = start_x + (idx * spacing_x)
-        y = 150
+        y = base_y
         
+        # Эффект шага вперед: активный игрок выдвигается влево к боссу и чуть вниз
         if is_his_turn:
-            x -= 40 # Выдвигается влево, ближе к боссу
-            y += 20 # Чуть смещается по вертикали для акцента
+            x -= 40  
+            y += 15  
             
-        # Загружаем иконку класса
         try:
             p_img = Image.open(f"assets/{player['class']}.png").convert("RGBA")
+            p_img = p_img.resize((p_w, p_h), Image.Resampling.NEAREST)
             bg.paste(p_img, (x, y), p_img)
         except FileNotFoundError:
-            # Заглушка игрока
-            color = (50, 200, 50) if player['class'] == 'воин' else (50, 50, 200)
-            draw.rectangle([x, y, x+50, y+50], fill=color)
+            color = (80, 80, 220) if player['class'] == 'бард' else (220, 180, 60)
+            draw.rectangle([x, y, x + p_w, y + p_h], fill=color)
 
-        # Подпись ника над игроком
-        display_name = player["user"].display_name[:10] # Обрезаем слишком длинные ники
+        # Никнейм над головой игрока
+        display_name = player["user"].display_name[:12]
+        name_color = "#FFD700" if is_his_turn else "white"  # Золотой цвет во время своего хода
+        draw.text((x, y - 35), display_name, fill=name_color, font=font_name)
         
-        # Если его ход — подсвечиваем ник желтым цветом
-        name_color = "yellow" if is_his_turn else "white"
-        draw.text((x, y - 40), display_name, fill=name_color, font=font)
-        
-        # Микро-полоска ХП над головой игрока
-        draw.rectangle([x, int(y - 15), int(x + 50), int(y - 10)], fill=(100, 0, 0))
+        # Полоска ХП над головой игрока (выровнена ровно по ширине персонажа `p_w`)
+        draw.rectangle([x, y - 15, x + p_w, y - 8], fill=(60, 20, 20))
         p_hp_percent = player["hp"] / 100
-        draw.rectangle([x, int(y - 15), int(x + 50 * p_hp_percent), int(y - 10)], fill=(0, 255, 0))
+        draw.rectangle([x, y - 15, x + int(p_w * p_hp_percent), y - 8], fill=(40, 220, 40)) # Зеленая шкала
 
-    # Храним изображение в буфере памяти, чтобы не засорять диск
+    # Сохраняем изображение в буфер памяти
     img_byte_arr = io.BytesIO()
     bg.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -150,7 +157,6 @@ class TurnButtons(discord.ui.View):
             for item in self.children:
                 item.disabled = True
                 
-            # Просто подтверждаем нажатие, сообщение обновим в основном цикле
             await interaction.response.defer()
             self.stop()
             
@@ -161,13 +167,14 @@ class TurnButtons(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f'✅ Бот {bot.user} успешно запущен!')
+    print(f'✅ Бот {bot.user} успешно запущен и готов обрабатывать JSON!')
 
 @bot.command(name="старт")
 async def start_boss(ctx):
     """Команда для запуска лобби и проведения пошагового боя с картинкой"""
     global session, BOSSES_LIST, CLASS_SKILLS, battle_message
     
+    # Обновляем данные на лету
     CLASS_SKILLS, BOSSES_LIST = load_game_data()
     
     if session.state != "IDLE":
@@ -199,11 +206,10 @@ async def start_boss(ctx):
 
     session.state = "BATTLING"
     
-    # Генерируем фиксированную очередь ходов игроков на эту битву
+    # Генерируем случайную очередь ходов игроков
     session.turn_order = list(session.players.keys())
-    random.shuffle(session.turn_order) # Перемешиваем для случайного порядка
+    random.shuffle(session.turn_order)
     
-    # Отправляем ПЕРВОЕ сообщение боя с картинкой-заставкой
     img_file = generate_battle_image()
     battle_message = await ctx.send(content="⚔️ **Битва начинается! Подготовка поля боя...**", file=img_file)
     await asyncio.sleep(2)
@@ -220,11 +226,9 @@ async def start_boss(ctx):
             if not player["is_alive"]:
                 continue
                 
-            # Обновляем картинку: передаем ID игрока, чтобы он выдвинулся вперед!
             img_file = generate_battle_image(current_player_id=p_id)
             view = TurnButtons(player, timeout=30)
             
-            # РЕДАКТИРУЕМ старое сообщение (меняем текст, картинку и прикрепляем новые кнопки)
             await battle_message.edit(
                 content=f"🔹 **РАУНД {round_number}** 🔹\n🛑 **Ход игрока {player['user'].mention} ({player['class']}).** Выберите навык:",
                 attachments=[img_file], 
@@ -241,7 +245,7 @@ async def start_boss(ctx):
             else:
                 skill_id = view.chosen_skill["id"]
                 
-                # Логика навыков
+                # Хэндлеры навыков
                 if skill_id == "warrior_slash":
                     damage = 25
                     action_text = "использует **⚔️ Сильный удар**"
@@ -275,7 +279,6 @@ async def start_boss(ctx):
 
             session.boss_hp = max(0, session.boss_hp - damage)
             
-            # Сразу после хода убираем кнопки и пишем лог атаки (картинку тоже обновляем, так как у босса убавилось ХП)
             img_file = generate_battle_image(current_player_id=p_id)
             await battle_message.edit(
                 content=f"⚔️ {player['user'].mention} {action_text} и наносит **{damage}** урона! (У босса осталось: {session.boss_hp} HP)", 
@@ -303,7 +306,6 @@ async def start_boss(ctx):
             target["is_alive"] = False
             death_text = f"\n💀 {target['user'].mention} погиб в бою!"
 
-        # Во время хода босса никто из игроков не выдвинут вперед (передаем None)
         img_file = generate_battle_image(current_player_id=None)
         await battle_message.edit(
             content=f"👹 **Ход Босса!**\n{session.boss_name} яростно бьет {target['user'].mention} на **{boss_damage}** урона!{death_text}",
