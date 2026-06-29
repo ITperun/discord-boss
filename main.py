@@ -1,8 +1,12 @@
-
 import discord
 from discord.ext import commands
 import asyncio
 import random
+import os                      # Модуль для работы с операционной системой
+from dotenv import load_dotenv  # Модуль для загрузки переменных из .env
+
+# Загружаем токен из скрытого файла .env
+load_dotenv()
 
 # Настраиваем интенты (разрешения для бота читать чат)
 intents = discord.Intents.default()
@@ -174,5 +178,5 @@ async def join_game(ctx, role: str = None):
     
     await ctx.send(f"✅ {user.mention} присоединился к рейду в роли **{role}**!")
 
-# Запуск бота с твоим токеном
-bot.run('MTM2MjEwMDU0NTUzOTY3NDE0Mg.G9xMfI.ltqkoyV2P8VEVCvtF29vzKRnEbKQYq3_n1JsKc')
+# Безопасный запуск: берем токен из файла .env, который Git проигнорирует
+bot.run(os.getenv('DISCORD_TOKEN'))
