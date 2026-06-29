@@ -167,10 +167,10 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     if session.def_buff_turns > 0:
         draw.text((320, buff_y), f"🛡️ Щит: +{int(session.def_buff_value*100)}% ({session.def_buff_turns}х)", fill="#00FFFF", font=font_name)
 
-    # Отрисовка отряда участников (📏 ровно 10 пикселей чистого зазора по горизонтали)
+    # Отрисовка отряда участников (📏 ровно 10 пикселей чистого зазора по горизонтали) позиция
     p_w, p_h = 75, 75       
-    start_x = 430           
-    spacing_x = 85          # 75px ширина иконки + 10px зазор = шаг 85px
+    start_x = 480           
+    spacing_x = 85
     base_y = 235           
 
     for idx, p_id in enumerate(reversed(session.turn_order)):
