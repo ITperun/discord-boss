@@ -53,23 +53,28 @@ class GameSession:
         self.boss_max_hp = 0
         self.boss_base_def = 0.0
         self.boss_attacks = []
+        self.boss_ultimate = None 
         self.turn_order = []
         
         # Индивидуальные стакающиеся баффы
         self.party_buffs = {"atk": {}, "def": {}, "regen": [], "vamp": {}}
         self.boss_debuffs = {"def_down": {}, "atk_down": {}, "dots": []}
         
-        self.boss_cooldown_counter = 0
+        self.boss_cooldown_counter = 0 
+        self.boss_turns_taken = 0      
         self.boss_slow_stacks = 0
 
 session = GameSession()
 
-# === 🎉 ОРИГИНАЛЬНАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ПОЛЯ БОЯ ===
+# === 🎉 ГЕНЕРАЦИЯ ПОЛЯ БОЯ (СТРОГО ПО JSON) ===
 def generate_battle_image(current_player_id=None, boss_action_ready=False):
     boss_cfg = VIEW_CONFIG["boss_display"]
     party_cfg = VIEW_CONFIG["party_display"]
+    
+    # Читаем размеры холста из твоего view_config.json
+    canvas_cfg = VIEW_CONFIG.get("canvas", {"width": 800, "height": 400})
+    c_w, c_h = canvas_cfg["width"], canvas_cfg["height"]
 
-    # Подбираем фон в зависимости от текущего босса
     bg_map = {
         "Орк-Разрушитель": "assets/background-orc.png",
         "Древний Дракон": "assets/background-dragon.png",
@@ -77,14 +82,16 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     }
     bg_path = bg_map.get(session.boss_name, "assets/background.png")
 
+    # Жёстко фиксируем фон под размер холста, чтобы ничего не съезжало
     try:
         bg = Image.open(bg_path).convert("RGBA")
+        bg = bg.resize((c_w, c_h), Image.Resampling.NEAREST)
     except FileNotFoundError:
-        # Если уникального фона нет, пробуем загрузить стандартный
         try:
             bg = Image.open("assets/background.png").convert("RGBA")
+            bg = bg.resize((c_w, c_h), Image.Resampling.NEAREST)
         except FileNotFoundError:
-            bg = Image.new("RGBA", (800, 400), (40, 40, 40, 255))
+            bg = Image.new("RGBA", (c_w, c_h), (40, 40, 40, 255))
         
     draw = ImageDraw.Draw(bg)
     
@@ -120,7 +127,7 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     max_cd = 3 if alive_count >= 5 else 2 if alive_count >= 3 else 1
     
     draw.text((boss_x, boss_y - 60), f"👹 {session.boss_name} (🛡️ Защита: {int(total_def*100)}%)", fill="white", font=font_name)
-    cd_text = "⚠️ ПОДГОТОВКА УДАРА!" if boss_action_ready else f"⏳ Зарядка атаки: {session.boss_cooldown_counter}/{max_cd}"
+    cd_text = "⚠️ ПОДГОТОВКА УДАРА!" if boss_action_ready else f"⏳ Очередь атаки: {session.boss_cooldown_counter}/{max_cd}"
     draw.text((boss_x, boss_y - 45), cd_text, fill="orange" if boss_action_ready else "#87CEEB", font=font_name)
     
     # Полоска ХП босса
@@ -129,7 +136,7 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
     draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp} HP", fill="white", font=font_hp)
 
-    # Отрисовка отряда на основе оригинальных параметров
+    # Отрисовка отряда на основе оригинальных параметров из твоего view_config
     p_w, p_h = party_cfg["sprite_width"], party_cfg["sprite_height"]
     start_x = party_cfg["start_x"]
     spacing_x = party_cfg["spacing_x"]
@@ -192,8 +199,10 @@ def generate_status_text():
         
     if party_text: text += "\n👥 **Командные Эффекты:**\n" + party_text
     
-    # 2. ЭФФЕКТЫ НА БОССЕ
+    # 2. ЭФФЕКТЫ НА БОССЕ И УЛЬТИМЕЙТ
     boss_text = ""
+    if session.boss_ultimate:
+        boss_text += f"🌟 **Зарядка Ультимейта:** {session.boss_turns_taken}/3\n"
     if session.boss_debuffs["def_down"]:
         total = int(sum(b["value"] for b in session.boss_debuffs["def_down"].values()) * 100)
         dur = max(b["duration"] for b in session.boss_debuffs["def_down"].values())
@@ -206,7 +215,7 @@ def generate_status_text():
         for d in session.boss_debuffs["dots"]:
             boss_text += f"🔥 **{d['type'].capitalize()}:** {d['damage']} урон/ход (Ост: {d['duration']} х.)\n"
             
-    if boss_text: text += "\n👹 **Эффекты на Боссе:**\n" + boss_text
+    if boss_text: text += "\n👹 **Статус Босса:**\n" + boss_text
             
     # 3. ПЕРСОНАЛЬНЫЕ СТАТУСЫ
     player_text = ""
@@ -297,6 +306,7 @@ async def start_boss(ctx):
     session.state = "RECRUITING"
     session.boss_name, session.boss_hp, session.boss_max_hp = boss["name"], boss["hp"], boss["hp"]
     session.boss_base_def, session.boss_attacks = boss.get("defense", 0.0), boss.get("attacks", [])
+    session.boss_ultimate = boss.get("ultimate")
     
     await ctx.send(f"🚨 **Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!**\nПишите: `!присоединиться [класс]`")
     await asyncio.sleep(60)
@@ -346,7 +356,6 @@ async def start_boss(ctx):
         target_id = None
         if skill and skill.get("target") == "ally":
             if player.get("is_npc"):
-                # Исключаем из целей самого себя и всех других бардов (защита от бесконечного цикла Оды)
                 allies = [p for p in session.players.values() if p["is_alive"] and p["id"] != p_id and not (skill["id"] == "bard_ode" and p["class"] == "бард")]
                 target_id = str(random.choice(allies)["id"]) if allies else None
             else:
@@ -390,8 +399,6 @@ async def start_boss(ctx):
                 else: session.boss_slow_stacks += 1; session.boss_cooldown_counter = max(0, session.boss_cooldown_counter - 1); action_text += " ❄️ Зарядка заморожена!"
             elif sid == "mage_lightning" and random.random() < 0.3: player["hp"] = max(1, player["hp"] - 30); action_text += "\n⚠️ Маг теряет 30 HP от перегрузки!"
             elif sid == "bard_regen": session.party_buffs["regen"].append({"duration": 4}); session.party_buffs["atk"]["bard_regen"] = {"value": 0.10, "duration": 4}; action_text += " 🎺 Атака и реген отряда!"
-            
-            # 🔥 ИСПРАВЛЕНИЕ ОДЫ (Нет клонов, нет других бардов)
             elif sid == "bard_ode":
                 if target_id:
                     session.party_buffs["atk"]["bard_ode"] = {"value": 0.20, "duration": 4}
@@ -400,8 +407,7 @@ async def start_boss(ctx):
                     action_text += " 🎸 Выбранный союзник получает ход вне очереди!"
                     is_ode = True
                 else:
-                    action_text += " 🎸 Но слушать оказалось некому (барды друг другу не подпевают)!"
-            
+                    action_text += " 🎸 Но слушать оказалось некому!"
             elif sid == "priest_smite":
                 for p in session.players.values():
                     if p["is_alive"]: p["hp"] = min(100, p["hp"] + random.randint(7,12))
@@ -418,7 +424,7 @@ async def start_boss(ctx):
         if session.party_buffs["vamp"] and dmg > 0:
             v_heal = int(dmg * 0.5); player["hp"] = min(100, player["hp"] + v_heal); action_text += f" 🦇 Отхил вампиризмом: {v_heal} HP!"
 
-        # === 🔄 ГЛОБАЛЬНЫЙ ТИК ХОДА (1 кнопка = 1 ход) ===
+        # === 🔄 ГЛОБАЛЬНЫЙ ТИК ХОДА ===
         if not is_ode and session.boss_hp > 0:
             for cat in ["atk", "def", "vamp"]:
                 for sid_key in list(session.party_buffs[cat].keys()):
@@ -493,11 +499,34 @@ async def start_boss(ctx):
             alive_players = [p for p in session.players.values() if p["is_alive"]]
             if not alive_players: break
                 
-            boss_atk = random.choice(session.boss_attacks)
-            targets = alive_players if boss_atk["target"] == "aoe" else [random.choice(alive_players)]
-            boss_atk_text = f"👹 **{session.boss_name}** проводит {'AOE' if boss_atk['target']=='aoe' else 'точечную'} атаку **{boss_atk['name']}**!"
+            if session.boss_turns_taken >= 3 and session.boss_ultimate:
+                boss_atk = session.boss_ultimate
+                session.boss_turns_taken = 0
+                is_ultimate = True
+            else:
+                boss_atk = random.choice(session.boss_attacks)
+                session.boss_turns_taken += 1
+                is_ultimate = False
+
+            targets = []
+            if boss_atk["target"] == "aoe":
+                targets = alive_players
+                atk_type_text = "масштабную AOE атаку"
+            elif boss_atk["target"].startswith("multi_"):
+                count = int(boss_atk["target"].split("_")[1])
+                targets = random.sample(alive_players, min(count, len(alive_players)))
+                atk_type_text = f"атаку по {len(targets)} целям"
+            else:
+                targets = [random.choice(alive_players)]
+                atk_type_text = "точечную атаку"
+
+            if is_ultimate:
+                boss_atk_text = f"🌟 **УЛЬТИМЕЙТ!** 👹 **{session.boss_name}** обрушивает {atk_type_text} **{boss_atk['name']}**!"
+            else:
+                boss_atk_text = f"👹 **{session.boss_name}** проводит {atk_type_text} **{boss_atk['name']}**!"
             
             death_reports = ""
+            total_heal = 0
             for t in targets:
                 atk_mod = 1.0 - sum(b["value"] for b in session.boss_debuffs["atk_down"].values())
                 base_dmg = int(random.randint(boss_atk["min_damage"], boss_atk["max_damage"]) * max(0.1, atk_mod))
@@ -506,6 +535,9 @@ async def start_boss(ctx):
                 
                 t["hp"] = max(0, t["hp"] - boss_damage)
                 boss_atk_text += f"\n💥 <@{t['id']}> получает **{boss_damage}** урона."
+
+                if boss_atk.get("heal_pct") and boss_damage > 0:
+                    total_heal += int(boss_damage * boss_atk["heal_pct"])
                 
                 if boss_atk.get("effect") and t["hp"] > 0:
                     t["debuffs"].append({"type": boss_atk["effect"]["type"], "duration": boss_atk["effect"]["duration"], "value": boss_atk["effect"].get("value", 0.30)})
@@ -514,6 +546,10 @@ async def start_boss(ctx):
                 if t["hp"] <= 0:
                     t["is_alive"] = False; death_reports += f"\n💀 <@{t['id']}> погиб!"
                     if t["id"] in session.turn_order: session.turn_order.remove(t["id"])
+
+            if total_heal > 0:
+                session.boss_hp = min(session.boss_max_hp, session.boss_hp + total_heal)
+                boss_atk_text += f"\n🩸 Босс восстанавливает себе **{total_heal}** HP!"
 
             status_content = generate_status_text()
             await battle_msg.edit(content=f"{boss_atk_text}{death_reports}", attachments=[generate_battle_image()], view=None)

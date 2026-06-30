@@ -1,30 +1,54 @@
 [
   {
     "name": "Орк-Разрушитель",
-    "hp": 650,
+    "hp": 750,
     "defense": 0.15,
     "attacks": [
       {"name": "🪓 Тяжелый замах", "target": "single", "min_damage": 50, "max_damage": 75, "effect": null},
-      {"name": "📢 Оглушительный крик", "target": "aoe", "min_damage": 25, "max_damage": 40, "effect": {"type": "ослабление", "duration": 2, "value": 0.30}},
-      {"name": "🩸 Кровавая ярость", "target": "single", "min_damage": 45, "max_damage": 60, "effect": {"type": "отравление", "duration": 3}}
-    ]
+      {"name": "🌪️ Размашистый удар", "target": "multi_2", "min_damage": 35, "max_damage": 50, "effect": null},
+      {"name": "📢 Оглушительный крик", "target": "aoe", "min_damage": 15, "max_damage": 25, "effect": {"type": "ослабление", "duration": 2, "value": 0.25}}
+    ],
+    "ultimate": {
+      "name": "💥 РАЗРУШИТЕЛЬНОЕ ЗЕМЛЕТРЯСЕНИЕ",
+      "target": "aoe",
+      "min_damage": 65,
+      "max_damage": 95,
+      "effect": {"type": "ослабление", "duration": 3, "value": 0.40}
+    }
   },
   {
     "name": "Древний Дракон",
-    "hp": 900,
+    "hp": 950,
     "defense": 0.30,
     "attacks": [
       {"name": "🐾 Удар когтем", "target": "single", "min_damage": 55, "max_damage": 85, "effect": null},
-      {"name": "🔥 Огненное дыхание", "target": "aoe", "min_damage": 35, "max_damage": 55, "effect": {"type": "горение", "duration": 3}}
-    ]
+      {"name": "🔥 Огненный плевок", "target": "multi_2", "min_damage": 30, "max_damage": 45, "effect": {"type": "горение", "duration": 2}},
+      {"name": "💨 Взмах крыльями", "target": "aoe", "min_damage": 25, "max_damage": 40, "effect": null}
+    ],
+    "ultimate": {
+      "name": "🌋 ИСПЕПЕЛЯЮЩЕЕ ДЫХАНИЕ",
+      "target": "aoe",
+      "min_damage": 55,
+      "max_damage": 75,
+      "effect": {"type": "горение", "duration": 4}
+    }
   },
   {
     "name": "Проклятый Некромант",
-    "hp": 550,
-    "defense": 0.20,
+    "hp": 600,
+    "defense": 0.15,
     "attacks": [
-      {"name": "⚡ Стрела Скверны", "target": "single", "min_damage": 45, "max_damage": 70, "effect": {"type": "отравление", "duration": 3}},
-      {"name": "💀 Взрыв трупа", "target": "aoe", "min_damage": 30, "max_damage": 50, "effect": null}
-    ]
+      {"name": "⚡ Стрела Скверны", "target": "single", "min_damage": 40, "max_damage": 60, "effect": {"type": "отравление", "duration": 3}},
+      {"name": "🩸 Вытягивание жизни", "target": "single", "min_damage": 30, "max_damage": 50, "heal_pct": 1.0, "effect": null},
+      {"name": "☠️ Облако миазмов", "target": "multi_3", "min_damage": 20, "max_damage": 35, "effect": {"type": "отравление", "duration": 2}}
+    ],
+    "ultimate": {
+      "name": "🧟 АРМИЯ МЕРТВЕЦОВ",
+      "target": "aoe",
+      "min_damage": 45,
+      "max_damage": 65,
+      "heal_pct": 0.5,
+      "effect": {"type": "отравление", "duration": 3}
+    }
   }
 ]
