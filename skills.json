@@ -1,22 +1,32 @@
 {
   "воин": [
-    {"name": "⚔️ Сильный удар", "id": "warrior_slash", "damage": 25, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null},
-    {"name": "🛡️ Глухая оборона", "id": "warrior_shield", "damage": 10, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0.35, "buff_turns": 3, "debuff": null},
-    {"name": "🩸 Кровопускание", "id": "warrior_bleed", "damage": 12, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "отравление", "damage": 12, "duration": 3}}
+    {"name": "⚔️ Сильный удар", "id": "warrior_slash", "damage": 25, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Физ. урон 25"},
+    {"name": "🛡️ Глухая оборона", "id": "warrior_shield", "damage": 10, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0.35, "buff_turns": 3, "debuff": null, "desc": "Физ. урон 10. Снижает урон босса на 35% на 3 хода"},
+    {"name": "💥 Казнь", "id": "warrior_execute", "damage": 35, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Мощный физ. урон 35"}
   ],
   "маг": [
-    {"name": "🔥 Огненный шар", "id": "mage_fireball", "damage": 25, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "горение", "damage": 15, "duration": 3}},
-    {"name": "❄️ Ледяная стрела", "id": "mage_ice", "damage": 18, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "замедление", "duration": 3}},
-    {"name": "⚡ Гроза", "id": "mage_lightning", "damage": 45, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null}
+    {"name": "🔥 Огненный шар", "id": "mage_fireball", "damage": 25, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "горение", "damage": 15, "duration": 3}, "desc": "Маг. урон 25 и поджигает босса (15 урона/3 хода)"},
+    {"name": "❄️ Ледяная стрела", "id": "mage_ice", "damage": 20, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "замедление", "duration": 1}, "desc": "Маг. урон 20 и замораживает зарядку атаки босса на 1 ход"},
+    {"name": "⚡ Гроза", "id": "mage_lightning", "damage": 45, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Сокрушительный маг. урон 45"}
   ],
   "бард": [
-    {"name": "🎵 Песня исцеления", "id": "bard_heal", "damage": 5, "dmg_type": "magical", "heal": 15, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null},
-    {"name": "✨ Боевой марш", "id": "bard_buff", "damage": 10, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0.30, "buff_def_pct": 0, "buff_turns": 4, "debuff": null},
-    {"name": "💤 Усыпляющая мелодия", "id": "bard_deb", "damage": 5, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "ослабление атаки", "power_pct": 0.30, "duration": 4}}
+    {"name": "🎵 Песня исцеления", "id": "bard_heal", "damage": 5, "dmg_type": "magical", "heal": 15, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Лечит команду на 15 HP, маг. урон 5"},
+    {"name": "🎸 Соло на лютне", "id": "bard_solo", "damage": 20, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Физ. урон 20"},
+    {"name": "✨ Боевой марш", "id": "bard_buff", "damage": 10, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0.30, "buff_turns": 4, "debuff": null, "desc": "Повышает урон рейда на 30% на 4 хода"}
   ],
   "священник": [
-    {"name": "✨ Карающий свет", "id": "priest_smite", "damage": 20, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null},
-    {"name": "❤️ Великое исцеление", "id": "priest_big_heal", "damage": 0, "dmg_type": "none", "heal": 35, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null},
-    {"name": "🌟 Молитва защиты", "id": "priest_prayer", "damage": 10, "dmg_type": "magical", "heal": 10, "buff_atk_pct": 0, "buff_def_pct": 0.25, "buff_turns": 3, "debuff": {"type": "ослабление атаки", "power_pct": 0.20, "duration": 3}}
+    {"name": "✨ Карающий свет", "id": "priest_smite", "damage": 20, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Маг. урон 20"},
+    {"name": "❤️ Великое исцеление", "id": "priest_big_heal", "damage": 0, "dmg_type": "none", "heal": 35, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Мощное лечение всей команды на 35 HP"},
+    {"name": "🌟 Молитва защиты", "id": "priest_prayer", "damage": 10, "dmg_type": "magical", "heal": 10, "buff_atk_pct": 0, "buff_def_pct": 0.25, "buff_turns": 3, "debuff": null, "desc": "Лечит команду на 10, физ. урон 10, щит на 25% защиты"}
+  ],
+  "рейнджер": [
+    {"name": "🏹 Точный выстрел", "id": "ranger_shot", "damage": 28, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Стабильный физ. урон 28 издалека"},
+    {"name": "🐍 Отравленная стрела", "id": "ranger_poison", "damage": 15, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "отравление", "damage": 18, "duration": 3}, "desc": "Физ. урон 15 и отравляет босса (18 яда/3 хода)"},
+    {"name": "🎯 Фокус на цель", "id": "ranger_focus", "damage": 10, "dmg_type": "physical", "heal": 0, "buff_atk_pct": 0.40, "buff_turns": 2, "debuff": null, "desc": "Физ. урон 10 и дает бафф +40% к атаке команды на 2 хода"}
+  ],
+  "некромант": [
+    {"name": "💀 Смертельное касание", "id": "necromancer_touch", "damage": 30, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Маг. урон 30 энергией Смерти"},
+    {"name": "🩸 Кровавый союз", "id": "necromancer_vamp", "damage": 15, "dmg_type": "magical", "heal": 15, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": null, "desc": "Высасывает силы босса: 15 маг. урона и 15 лечения команде"},
+    {"name": "🔥 Проклятие Скверны", "id": "necromancer_curse", "damage": 10, "dmg_type": "magical", "heal": 0, "buff_atk_pct": 0, "buff_def_pct": 0, "buff_turns": 0, "debuff": {"type": "горение", "damage": 22, "duration": 2}, "desc": "Маг. урон 10 и вешает сильное горение (22 урона/2 хода)"}
   ]
 }
