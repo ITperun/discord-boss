@@ -12,6 +12,7 @@ from graphics import generate_battle_image
 from effects import generate_status_text
 from combat import clean_dead_casters, execute_skill, process_global_tick, execute_boss_attack
 from ui import TurnButtons, TargetView
+import database  # <--- ИМПОРТИРУЕМ НОВУЮ БАЗУ ДАННЫХ
 
 load_dotenv()
 intents = discord.Intents.default()
@@ -19,11 +20,22 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
-async def on_ready(): print(f'✅ Бот {bot.user} запущен и модули загружены!')
+async def on_ready(): 
+    print(f'✅ Бот {bot.user} запущен и модули загружены!')
+
+@bot.command(name="кошелек")
+async def check_wallet(ctx):
+    """Команда для проверки баланса золота."""
+    wallets = database.load_wallets()
+    user_id = str(ctx.author.id)
+    
+    if user_id in wallets:
+        await ctx.send(f"💰 {ctx.author.mention}, в твоем кошельке **{wallets[user_id]['gold']} золота**.")
+    else:
+        await ctx.send(f"🕸️ {ctx.author.mention}, твой кошелек пуст. Записи о тебе в базе данных нет, так как ты еще не побеждал боссов!")
 
 @bot.command(name="старт")
 async def start_boss(ctx):
-    # Обновляем JSON конфиги каждый раз при старте нового босса
     config.reload_data()
     
     if session.state != "IDLE": return await ctx.send("⚠️ Битва уже идет!")
@@ -34,8 +46,9 @@ async def start_boss(ctx):
     session.boss_name, session.boss_hp, session.boss_max_hp = boss["name"], boss["hp"], boss["hp"]
     session.boss_base_def, session.boss_attacks = boss.get("defense", 0.0), boss.get("attacks", [])
     session.boss_ultimate = boss.get("ultimate")
+    session.boss_reward = boss.get("reward", 0)  # <--- Запоминаем награду за босса
     
-    await ctx.send(f"🚨 **Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!**\nПишите: `!присоединиться [класс]`")
+    await ctx.send(f"🚨 **Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!**\nНаграда за убийство: **{session.boss_reward} золота** 💰\nПишите: `!присоединиться [класс]`")
     await asyncio.sleep(60)
 
     if len(session.players) == 0:
@@ -136,8 +149,23 @@ async def start_boss(ctx):
             delay = max(5.0, min(14.0, 4.0 + (lines_count * 0.4)))
             await asyncio.sleep(delay)
 
-    if session.boss_hp <= 0: await battle_msg.edit(content=f"🎉 **ПОБЕДА!** **{session.boss_name}** повержен! 🏆", attachments=[generate_battle_image()], view=None)
-    else: await battle_msg.edit(content=f"💀 **ПОРАЖЕНИЕ...** Отряд уничтожен.", attachments=[generate_battle_image()], view=None)
+    # === ФИНАЛ И РАЗДАЧА НАГРАД ===
+    if session.boss_hp <= 0: 
+        reward_text = ""
+        # Выдаем золото только живым или всем участникам? Выдадим всем реальным людям в отряде!
+        for p in session.players.values():
+            if not p.get("is_npc"):
+                database.add_gold(p["id"], session.boss_reward)
+                reward_text += f"<@{p['id']}> "
+                
+        victory_msg = f"🎉 **ПОБЕДА!** **{session.boss_name}** повержен! 🏆\n"
+        if reward_text:
+            victory_msg += f"💰 Отряд получает награду по **{session.boss_reward} золота**: {reward_text}"
+            
+        await battle_msg.edit(content=victory_msg, attachments=[generate_battle_image()], view=None)
+    else: 
+        await battle_msg.edit(content=f"💀 **ПОРАЖЕНИЕ...** Отряд уничтожен.", attachments=[generate_battle_image()], view=None)
+        
     session.state = "IDLE"
 
 @bot.command(name="присоединиться", aliases=["join"])

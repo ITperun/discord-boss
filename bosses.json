@@ -3,6 +3,7 @@
     "name": "Орк-Разрушитель",
     "hp": 750,
     "defense": 0.15,
+    "reward": 150,
     "attacks": [
       {"name": "🪓 Тяжелый замах", "target": "single", "min_damage": 50, "max_damage": 75, "effect": null},
       {"name": "🌪️ Размашистый удар", "target": "multi_2", "min_damage": 35, "max_damage": 50, "effect": null},
@@ -20,6 +21,7 @@
     "name": "Древний Дракон",
     "hp": 950,
     "defense": 0.30,
+    "reward": 500,
     "attacks": [
       {"name": "🐾 Удар когтем", "target": "single", "min_damage": 55, "max_damage": 85, "effect": null},
       {"name": "🔥 Огненный плевок", "target": "multi_2", "min_damage": 30, "max_damage": 45, "effect": {"type": "горение", "duration": 2}},
@@ -37,6 +39,7 @@
     "name": "Проклятый Некромант",
     "hp": 600,
     "defense": 0.15,
+    "reward": 300,
     "attacks": [
       {"name": "⚡ Стрела Скверны", "target": "single", "min_damage": 40, "max_damage": 60, "effect": {"type": "отравление", "duration": 3}},
       {"name": "🩸 Вытягивание жизни", "target": "single", "min_damage": 30, "max_damage": 50, "heal_pct": 1.0, "effect": null},
