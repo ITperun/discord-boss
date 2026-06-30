@@ -5,14 +5,13 @@ import random
 import os
 from dotenv import load_dotenv
 
-# Импортируем наши собственные модули
 import config
 from game_state import session
-from graphics import generate_battle_image
+import database
+from graphics import generate_battle_image, generate_profile_image
 from effects import generate_status_text
 from combat import clean_dead_casters, execute_skill, process_global_tick, execute_boss_attack
 from ui import TurnButtons, TargetView
-import database  # <--- ИМПОРТИРУЕМ НОВУЮ БАЗУ ДАННЫХ
 
 load_dotenv()
 intents = discord.Intents.default()
@@ -25,28 +24,50 @@ async def on_ready():
 
 @bot.command(name="кошелек")
 async def check_wallet(ctx):
-    """Команда для проверки баланса золота."""
-    wallets = database.load_wallets()
-    user_id = str(ctx.author.id)
+    player = database.get_player(ctx.author.id, ctx.author.display_name)
+    await ctx.send(f"💰 {ctx.author.mention}, в твоем кошельке **{player['gold']} золота**.")
+
+@bot.command(name="профиль")
+async def show_profile(ctx):
+    player_data = database.get_player(ctx.author.id, ctx.author.display_name)
+    stats = database.get_total_stats(ctx.author.id)
     
-    if user_id in wallets:
-        await ctx.send(f"💰 {ctx.author.mention}, в твоем кошельке **{wallets[user_id]['gold']} золота**.")
-    else:
-        await ctx.send(f"🕸️ {ctx.author.mention}, твой кошелек пуст. Записи о тебе в базе данных нет, так как ты еще не побеждал боссов!")
+    avatar_bytes = None
+    try:
+        avatar_bytes = await ctx.author.display_avatar.replace(size=256, format="png").read()
+    except Exception as e:
+        print(f"Не удалось загрузить аватар: {e}")
+        
+    file = generate_profile_image(player_data, stats, avatar_bytes)
+    await ctx.send(file=file)
 
 @bot.command(name="старт")
-async def start_boss(ctx):
+async def start_boss(ctx, *, requested_boss: str = None):
+    """
+    Команда !старт начинает бой.
+    Можно написать !старт орк, !старт дракон и т.д.
+    """
     config.reload_data()
     
-    if session.state != "IDLE": return await ctx.send("⚠️ Битва уже идет!")
+    if session.state != "IDLE": 
+        return await ctx.send("⚠️ Битва уже идет!")
 
-    boss = random.choice(config.BOSSES_LIST)
+    # Логика выбора конкретного босса
+    if requested_boss:
+        found_bosses = [b for b in config.BOSSES_LIST if requested_boss.lower() in b["name"].lower()]
+        if not found_bosses:
+            available = ", ".join([b["name"] for b in config.BOSSES_LIST])
+            return await ctx.send(f"❌ Босс `{requested_boss}` не найден! Доступные боссы: {available}")
+        boss = found_bosses[0]
+    else:
+        boss = random.choice(config.BOSSES_LIST)
+
     session.reset()
     session.state = "RECRUITING"
     session.boss_name, session.boss_hp, session.boss_max_hp = boss["name"], boss["hp"], boss["hp"]
     session.boss_base_def, session.boss_attacks = boss.get("defense", 0.0), boss.get("attacks", [])
     session.boss_ultimate = boss.get("ultimate")
-    session.boss_reward = boss.get("reward", 0)  # <--- Запоминаем награду за босса
+    session.boss_reward = boss.get("reward", 0) 
     
     await ctx.send(f"🚨 **Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!**\nНаграда за убийство: **{session.boss_reward} золота** 💰\nПишите: `!присоединиться [класс]`")
     await asyncio.sleep(60)
@@ -57,7 +78,9 @@ async def start_boss(ctx):
 
     for i in range(1, 8 - len(session.players)):
         bot_id = f"npc_bot{i}"
-        session.players[bot_id] = {"id": bot_id, "name": bot_id, "class": random.choice(config.AVAILABLE_CLASSES), "hp": 100, "is_alive": True, "is_npc": True, "strafe_turns": 0, "debuffs": []}
+        npc_stats = database.get_total_stats(bot_id)
+        max_hp = npc_stats["VIT"] * 10
+        session.players[bot_id] = {"id": bot_id, "name": bot_id, "class": random.choice(config.AVAILABLE_CLASSES), "hp": max_hp, "max_hp": max_hp, "is_alive": True, "is_npc": True, "strafe_turns": 0, "debuffs": []}
 
     session.state = "BATTLING"
     session.turn_order = list(session.players.keys())
@@ -84,7 +107,6 @@ async def start_boss(ctx):
         is_ode = False
         boss_trigger = False
 
-        # --- ВЫБОР НАВЫКА ---
         if player.get("is_npc"):
             skill = random.choice(config.CLASS_SKILLS[player["class"]])
             await battle_msg.edit(content=f"🤖 **Ходит {player['name']} ({player['class']}).**", attachments=[generate_battle_image(p_id)], view=None)
@@ -95,7 +117,6 @@ async def start_boss(ctx):
             await view.wait()
             skill = view.chosen_skill
             
-        # --- ВЫБОР ЦЕЛИ ---
         target_id = None
         if skill and skill.get("target") == "ally":
             allies = [p for p in session.players.values() if p["is_alive"] and p["id"] != p_id and not (skill["id"] == "bard_ode" and p["class"] == "бард")]
@@ -108,22 +129,18 @@ async def start_boss(ctx):
                     await t_view.wait()
                     target_id = str(t_view.chosen_target) if t_view.chosen_target else None
 
-        # --- ПРИМЕНЕНИЕ НАВЫКА ---
         if skill is None:
             action_text += f"\n💤 Пропустил свой ход!"
         else:
             action_text, dmg, is_ode = execute_skill(p_id, player, skill, target_id)
 
-        # --- ГЛОБАЛЬНЫЙ ТИК ---
         if not is_ode and session.boss_hp > 0:
             tick_text, boss_trigger = process_global_tick(p_id)
 
-        # Сдвиг очереди
         if session.turn_order and session.turn_order[0] == p_id:
             popped = session.turn_order.pop(0)
             if player["is_alive"]: session.turn_order.append(popped)
         
-        # Обновление сообщений
         status_content = generate_status_text()
         await battle_msg.edit(content=f"⚔️ <@{p_id}> {action_text}{tick_text} (У босса: {session.boss_hp} HP)", attachments=[generate_battle_image(None, boss_trigger)], view=None)
         await status_msg.edit(content=status_content)
@@ -134,7 +151,6 @@ async def start_boss(ctx):
 
         if session.boss_hp <= 0: break
 
-        # ================= ХОД БОССА =================
         if boss_trigger:
             alive_players = [p for p in session.players.values() if p["is_alive"]]
             if not alive_players: break
@@ -149,10 +165,8 @@ async def start_boss(ctx):
             delay = max(5.0, min(14.0, 4.0 + (lines_count * 0.4)))
             await asyncio.sleep(delay)
 
-    # === ФИНАЛ И РАЗДАЧА НАГРАД ===
     if session.boss_hp <= 0: 
         reward_text = ""
-        # Выдаем золото только живым или всем участникам? Выдадим всем реальным людям в отряде!
         for p in session.players.values():
             if not p.get("is_npc"):
                 database.add_gold(p["id"], session.boss_reward)
@@ -173,7 +187,12 @@ async def join_game(ctx, role: str = None):
     if session.state != "RECRUITING": return
     if not role or role.lower() not in config.AVAILABLE_CLASSES: return await ctx.send(f"❌ Классы: {', '.join(config.AVAILABLE_CLASSES)}")
     if str(ctx.author.id) in session.players: return
-    session.players[str(ctx.author.id)] = {"id": ctx.author.id, "name": ctx.author.display_name, "class": role.lower(), "hp": 100, "is_alive": True, "is_npc": False, "strafe_turns": 0, "debuffs": []}
-    await ctx.send(f"✅ {ctx.author.mention} готов как **{role}**!")
+    
+    database.get_player(ctx.author.id, ctx.author.display_name) 
+    stats = database.get_total_stats(ctx.author.id)
+    max_hp = stats["VIT"] * 10
+    
+    session.players[str(ctx.author.id)] = {"id": ctx.author.id, "name": ctx.author.display_name, "class": role.lower(), "hp": max_hp, "max_hp": max_hp, "is_alive": True, "is_npc": False, "strafe_turns": 0, "debuffs": []}
+    await ctx.send(f"✅ {ctx.author.mention} готов как **{role}** (❤️ {max_hp} HP)!")
 
 bot.run(os.getenv('DISCORD_TOKEN'))

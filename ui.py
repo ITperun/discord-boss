@@ -3,7 +3,7 @@ import config
 
 class TargetSelect(discord.ui.Select):
     def __init__(self, player, skill, allies):
-        opts = [discord.SelectOption(label=a["name"], description=f"Класс: {a['class']} | HP: {a['hp']}", value=str(a["id"])) for a in allies]
+        opts = [discord.SelectOption(label=a["name"], description=f"Класс: {a['class']} | HP: {a['hp']}/{a['max_hp']}", value=str(a["id"])) for a in allies]
         super().__init__(placeholder="Выберите союзника...", options=opts)
         self.player, self.skill = player, skill
 

@@ -6,7 +6,7 @@ class GameSession:
         self.boss_hp = 0
         self.boss_max_hp = 0
         self.boss_base_def = 0.0
-        self.boss_reward = 0    # <--- ДОБАВЛЕНО: Награда за босса
+        self.boss_reward = 0    
         self.boss_attacks = []
         self.boss_ultimate = None 
         self.turn_order = []

@@ -1,30 +1,63 @@
 import json
 import os
+import config
 
-DB_FILE = "wallets.json"
+DB_FILE = "players.json"
 
-def load_wallets():
-    """Загружает базу данных кошельков. Если файла нет, возвращает пустой словарь."""
-    if not os.path.exists(DB_FILE):
-        return {}
+# Базовые статы "голого" персонажа
+BASE_STATS = {"STR": 10, "AGI": 10, "INT": 10, "VIT": 10, "CHA": 10, "DEX": 0, "LUK": 0}
+
+def load_db():
+    if not os.path.exists(DB_FILE): return {}
     with open(DB_FILE, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return {}
+        try: return json.load(f)
+        except json.JSONDecodeError: return {}
 
-def save_wallets(wallets):
-    """Сохраняет данные кошельков в файл."""
+def save_db(data):
     with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(wallets, f, indent=4, ensure_ascii=False)
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+def get_player(user_id, display_name="Unknown"):
+    db = load_db()
+    uid = str(user_id)
+    if uid not in db:
+        db[uid] = {
+            "name": display_name,
+            "gold": 0,
+            "inventory": [], 
+            "equipment": {"weapon": None, "armor": None, "acc1": None, "acc2": None}
+        }
+        save_db(db)
+    return db[uid]
 
 def add_gold(user_id, amount):
-    """Добавляет золото указанному пользователю. Создает кошелек, если его не было."""
-    wallets = load_wallets()
-    user_id_str = str(user_id)
+    db = load_db()
+    uid = str(user_id)
+    if uid in db:
+        db[uid]["gold"] += amount
+        save_db(db)
+
+def get_total_stats(user_id):
+    """Считает сумму базовых статов + бонусы от всего надетого снаряжения"""
+    uid = str(user_id)
+    # Если это бот (NPC), даем ему базовые статы
+    if uid.startswith("npc_"): return BASE_STATS.copy()
     
-    if user_id_str not in wallets:
-        wallets[user_id_str] = {"gold": 0}
-        
-    wallets[user_id_str]["gold"] += amount
-    save_wallets(wallets)
+    db = load_db()
+    if uid not in db: return BASE_STATS.copy()
+    
+    player = db[uid]
+    total_stats = BASE_STATS.copy()
+    
+    all_items = {**config.ITEMS_DB.get("weapons", {}), 
+                 **config.ITEMS_DB.get("armor", {}), 
+                 **config.ITEMS_DB.get("accessories", {})}
+    
+    for slot, item_id in player["equipment"].items():
+        if item_id and item_id in all_items:
+            item_stats = all_items[item_id].get("stats", {})
+            for stat_name, val in item_stats.items():
+                if stat_name in total_stats:
+                    total_stats[stat_name] += val
+                    
+    return total_stats
