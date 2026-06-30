@@ -64,15 +64,27 @@ class GameSession:
 
 session = GameSession()
 
-# === 🎉 ГЕНЕРАЦИЯ ПОЛЯ БОЯ ===
+# === 🎉 ОРИГИНАЛЬНАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ПОЛЯ БОЯ ===
 def generate_battle_image(current_player_id=None, boss_action_ready=False):
     boss_cfg = VIEW_CONFIG["boss_display"]
     party_cfg = VIEW_CONFIG["party_display"]
 
+    # Подбираем фон в зависимости от текущего босса
+    bg_map = {
+        "Орк-Разрушитель": "assets/background-orc.png",
+        "Древний Дракон": "assets/background-dragon.png",
+        "Проклятый Некромант": "assets/background-necro.png"
+    }
+    bg_path = bg_map.get(session.boss_name, "assets/background.png")
+
     try:
-        bg = Image.open("assets/background.png").convert("RGBA")
+        bg = Image.open(bg_path).convert("RGBA")
     except FileNotFoundError:
-        bg = Image.new("RGBA", (800, 400), (40, 40, 40, 255))
+        # Если уникального фона нет, пробуем загрузить стандартный
+        try:
+            bg = Image.open("assets/background.png").convert("RGBA")
+        except FileNotFoundError:
+            bg = Image.new("RGBA", (800, 400), (40, 40, 40, 255))
         
     draw = ImageDraw.Draw(bg)
     
@@ -117,7 +129,7 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
     draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp} HP", fill="white", font=font_hp)
 
-    # Отрисовка отряда 
+    # Отрисовка отряда на основе оригинальных параметров
     p_w, p_h = party_cfg["sprite_width"], party_cfg["sprite_height"]
     start_x = party_cfg["start_x"]
     spacing_x = party_cfg["spacing_x"]
