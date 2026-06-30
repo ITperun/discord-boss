@@ -64,7 +64,7 @@ class GameSession:
 
 session = GameSession()
 
-# === 🎉 ОРИГИНАЛЬНАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ПОЛЯ БОЯ ===
+# === 🎉 ГЕНЕРАЦИЯ ПОЛЯ БОЯ ===
 def generate_battle_image(current_player_id=None, boss_action_ready=False):
     boss_cfg = VIEW_CONFIG["boss_display"]
     party_cfg = VIEW_CONFIG["party_display"]
@@ -117,7 +117,7 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
     draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp} HP", fill="white", font=font_hp)
 
-    # Отрисовка отряда на основе оригинальных параметров
+    # Отрисовка отряда 
     p_w, p_h = party_cfg["sprite_width"], party_cfg["sprite_height"]
     start_x = party_cfg["start_x"]
     spacing_x = party_cfg["spacing_x"]
@@ -156,49 +156,67 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     img_byte_arr.seek(0)
     return discord.File(fp=img_byte_arr, filename="battle.png")
 
-# === СООБЩЕНИЕ СО СТАТУСАМИ ===
+# === СТРУКТУРИРОВАННОЕ СООБЩЕНИЕ СО СТАТУСАМИ ===
 def generate_status_text():
     text = "📋 **СОСТОЯНИЕ ПОЛЯ БОЯ:**\n"
+    
+    # 1. ОБЩИЕ БАФФЫ ОТРЯДА
+    party_text = ""
     if session.party_buffs["atk"]:
         total = int(sum(b["value"] for b in session.party_buffs["atk"].values()) * 100)
         dur = max(b["duration"] for b in session.party_buffs["atk"].values())
-        text += f"🟢 **Атака отряда:** +{total}% (Осталось ходов: {dur})\n"
+        party_text += f"🟢 **Атака:** +{total}% (Ост: {dur} х.)\n"
     if session.party_buffs["def"]:
         total = int(sum(b["value"] for b in session.party_buffs["def"].values()) * 100)
         dur = max(b["duration"] for b in session.party_buffs["def"].values())
-        text += f"🛡️ **Защита отряда:** +{total}% (Осталось ходов: {dur})\n"
+        party_text += f"🛡️ **Защита:** +{total}% (Ост: {dur} х.)\n"
     if session.party_buffs["regen"]:
         total = len(session.party_buffs["regen"]) * 7
         dur = max(b["duration"] for b in session.party_buffs["regen"])
-        text += f"❤️ **Регенерация:** +{total} HP/ход (Осталось ходов: {dur})\n"
+        party_text += f"❤️ **Регенерация:** +{total} HP/ход (Ост: {dur} х.)\n"
     if session.party_buffs["vamp"]:
         dur = max(b["duration"] for b in session.party_buffs["vamp"].values())
-        text += f"🦇 **Вампиризм:** Активен (Осталось ходов: {dur})\n"
+        party_text += f"🦇 **Вампиризм:** Активен (Ост: {dur} х.)\n"
+        
+    if party_text: text += "\n👥 **Командные Эффекты:**\n" + party_text
     
+    # 2. ЭФФЕКТЫ НА БОССЕ
+    boss_text = ""
     if session.boss_debuffs["def_down"]:
         total = int(sum(b["value"] for b in session.boss_debuffs["def_down"].values()) * 100)
         dur = max(b["duration"] for b in session.boss_debuffs["def_down"].values())
-        text += f"🔴 **Раскол брони босса:** -{total}% (Осталось ходов: {dur})\n"
+        boss_text += f"🔴 **Раскол брони:** -{total}% (Ост: {dur} х.)\n"
     if session.boss_debuffs["atk_down"]:
         total = int(sum(b["value"] for b in session.boss_debuffs["atk_down"].values()) * 100)
         dur = max(b["duration"] for b in session.boss_debuffs["atk_down"].values())
-        text += f"📉 **Слабость босса:** -{total}% урона (Осталось ходов: {dur})\n"
+        boss_text += f"📉 **Слабость:** -{total}% урона (Ост: {dur} х.)\n"
     if session.boss_debuffs["dots"]:
         for d in session.boss_debuffs["dots"]:
-            text += f"🔥 **{d['type'].capitalize()} на боссе:** {d['damage']} урон/ход (Осталось ходов: {d['duration']})\n"
+            boss_text += f"🔥 **{d['type'].capitalize()}:** {d['damage']} урон/ход (Ост: {d['duration']} х.)\n"
             
-    # Собираем дебаффы, которые висят на игроках
-    player_debuffs = {}
+    if boss_text: text += "\n👹 **Эффекты на Боссе:**\n" + boss_text
+            
+    # 3. ПЕРСОНАЛЬНЫЕ СТАТУСЫ (Дебаффы босса и личные стойки)
+    player_text = ""
     for p in session.players.values():
-        if p["is_alive"]:
-            for d in p["debuffs"]:
-                if d["type"] not in player_debuffs or d["duration"] > player_debuffs[d["type"]]:
-                    player_debuffs[d["type"]] = d["duration"]
-                    
-    for dtype, dur in player_debuffs.items():
-        text += f"🤒 **Дебафф на отряде ({dtype.capitalize()}):** Осталось ходов: {dur}\n"
+        if not p["is_alive"]: continue
+        
+        p_effects = []
+        for d in p["debuffs"]:
+            p_effects.append(f"🤒 {d['type'].capitalize()} ({d['duration']}х)")
             
-    if "\n" not in text[25:]: text += "*Эффектов нет*\n"
+        if p.get("strafe_turns", 0) > 0:
+            p_effects.append(f"🌪️ Стрейф ({p['strafe_turns']}х)")
+            
+        if p_effects:
+            mention_or_name = p['name'] if p.get("is_npc") else f"<@{p['id']}>"
+            player_text += f"👤 {mention_or_name}: " + ", ".join(p_effects) + "\n"
+            
+    if player_text: text += "\n🎯 **Персональные статусы:**\n" + player_text
+            
+    if not party_text and not boss_text and not player_text:
+        text += "\n*Чистое поле (Эффектов нет)*\n"
+        
     return text
 
 # === МЕНЮ ВЫБОРА ЦЕЛИ ===
@@ -353,8 +371,8 @@ async def start_boss(ctx):
                 if random.random() < 0.3:
                     c_dmg = max(1, int(random.randint(40,65) * (1.0 - sum(b["value"] for b in session.party_buffs["def"].values()))))
                     player["hp"] = max(0, player["hp"] - c_dmg); action_text += f"\n⚠️ Босс отвечает вне очереди! Получено **{c_dmg}** урона!"
-                    if player["hp"] == 0: player["is_alive"] = False
-            elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 9, "duration": 3}); action_text += " 🔥 Босс подожжен!"
+                    if player["hp"] <= 0: player["is_alive"] = False
+            elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 9, "duration": 3, "caster_id": p_id}); action_text += " 🔥 Босс подожжен!"
             elif sid == "mage_ice" and random.random() < 0.9:
                 if session.boss_slow_stacks >= 2: action_text += " ❌ У босса иммунитет ко льду!"
                 else: session.boss_slow_stacks += 1; session.boss_cooldown_counter = max(0, session.boss_cooldown_counter - 1); action_text += " ❄️ Зарядка заморожена!"
@@ -384,19 +402,16 @@ async def start_boss(ctx):
 
         # === 🔄 ГЛОБАЛЬНЫЙ ТИК ХОДА (1 кнопка = 1 ход) ===
         if not is_ode and session.boss_hp > 0:
-            # Снижаем таймеры баффов отряда
             for cat in ["atk", "def", "vamp"]:
                 for sid_key in list(session.party_buffs[cat].keys()):
                     session.party_buffs[cat][sid_key]["duration"] -= 1
                     if session.party_buffs[cat][sid_key]["duration"] <= 0: del session.party_buffs[cat][sid_key]
                     
-            # Снижаем таймеры дебаффов босса
             for cat in ["def_down", "atk_down"]:
                 for sid_key in list(session.boss_debuffs[cat].keys()):
                     session.boss_debuffs[cat][sid_key]["duration"] -= 1
                     if session.boss_debuffs[cat][sid_key]["duration"] <= 0: del session.boss_debuffs[cat][sid_key]
 
-            # Регенерация
             regen_heal = len(session.party_buffs["regen"]) * 7
             if regen_heal > 0:
                 for p in session.players.values():
@@ -405,7 +420,6 @@ async def start_boss(ctx):
             for r in session.party_buffs["regen"]: r["duration"] -= 1
             session.party_buffs["regen"] = [r for r in session.party_buffs["regen"] if r["duration"] > 0]
             
-            # Доты на боссе (урон каждый ход!)
             dot_dmg = sum(d["damage"] for d in session.boss_debuffs["dots"])
             if dot_dmg > 0:
                 session.boss_hp = max(0, session.boss_hp - dot_dmg)
@@ -413,7 +427,6 @@ async def start_boss(ctx):
             for d in session.boss_debuffs["dots"]: d["duration"] -= 1
             session.boss_debuffs["dots"] = [d for d in session.boss_debuffs["dots"] if d["duration"] > 0]
             
-            # Дебаффы на игроках (яд/горение)
             for p in session.players.values():
                 if not p["is_alive"]: continue
                 p_dot = sum(9 for d in p["debuffs"] if d["type"] in ["горение", "отравление"])
@@ -427,7 +440,6 @@ async def start_boss(ctx):
                 for d in p["debuffs"]: d["duration"] -= 1
                 p["debuffs"] = [d for d in p["debuffs"] if d["duration"] > 0]
                 
-            # Авто-стрейф Рейнджера
             for p in session.players.values():
                 if p["is_alive"] and p.get("strafe_turns", 0) > 0:
                     boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
@@ -437,7 +449,6 @@ async def start_boss(ctx):
                     tick_text += f"\n🏹 Авто-Стрейф ({p['name']}) наносит {dmg1} и {dmg2} урона!"
                     p["strafe_turns"] -= 1
                     
-            # Счетчик ходов босса
             alive_count = len([p for p in session.players.values() if p["is_alive"]])
             max_cd = 3 if alive_count >= 5 else 2 if alive_count >= 3 else 1
             session.boss_cooldown_counter += 1
@@ -445,14 +456,18 @@ async def start_boss(ctx):
                 boss_trigger = True
                 session.boss_cooldown_counter = 0
 
-        # Аккуратное смещение очереди
         if session.turn_order and session.turn_order[0] == p_id:
             popped = session.turn_order.pop(0)
             if player["is_alive"]: session.turn_order.append(popped)
         
+        status_content = generate_status_text()
         await battle_msg.edit(content=f"⚔️ <@{p_id}> {action_text}{tick_text} (У босса: {session.boss_hp} HP)", attachments=[generate_battle_image(None, boss_trigger)], view=None)
-        await status_msg.edit(content=generate_status_text())
-        await asyncio.sleep(5.0)
+        await status_msg.edit(content=status_content)
+        
+        # Динамический таймер ожидания (минимум 5 сек, максимум 12)
+        lines_count = status_content.count('\n') + action_text.count('\n') + tick_text.count('\n')
+        delay = max(5.0, min(12.0, 4.0 + (lines_count * 0.4)))
+        await asyncio.sleep(delay)
 
         if session.boss_hp <= 0: break
 
@@ -483,9 +498,13 @@ async def start_boss(ctx):
                     t["is_alive"] = False; death_reports += f"\n💀 <@{t['id']}> погиб!"
                     if t["id"] in session.turn_order: session.turn_order.remove(t["id"])
 
+            status_content = generate_status_text()
             await battle_msg.edit(content=f"{boss_atk_text}{death_reports}", attachments=[generate_battle_image()], view=None)
-            await status_msg.edit(content=generate_status_text())
-            await asyncio.sleep(5.0)
+            await status_msg.edit(content=status_content)
+            
+            lines_count = status_content.count('\n') + boss_atk_text.count('\n') + death_reports.count('\n')
+            delay = max(5.0, min(12.0, 4.0 + (lines_count * 0.4)))
+            await asyncio.sleep(delay)
 
     if session.boss_hp <= 0: await battle_msg.edit(content=f"🎉 **ПОБЕДА!** **{session.boss_name}** повержен! 🏆", attachments=[generate_battle_image()], view=None)
     else: await battle_msg.edit(content=f"💀 **ПОРАЖЕНИЕ...** Отряд уничтожен.", attachments=[generate_battle_image()], view=None)
