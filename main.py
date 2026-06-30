@@ -8,17 +8,17 @@ import io
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
-# Загружаем токен из скрытого файла .env
+# Загружаем токен
 load_dotenv()
-
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-battle_message = None
+# Глобальные переменные для конфигурации
+CLASS_SKILLS = {}
+BOSSES_LIST = []
+VIEW_CONFIG = {}
 
-# === СЧИТЫВАНИЕ ВСЕХ КОНФИГУРАЦИОННЫХ ФАЙЛОВ ===
 def load_game_data():
     with open("skills.json", "r", encoding="utf-8") as f:
         skills_data = json.load(f)
@@ -31,38 +31,19 @@ def load_game_data():
 CLASS_SKILLS, BOSSES_LIST, VIEW_CONFIG = load_game_data()
 AVAILABLE_CLASSES = list(CLASS_SKILLS.keys())
 
-# === ✂️ ДИНАМИЧЕСКАЯ НАРЕЗКА СПРАЙТОВ НА ОСНОВЕ JSON-КОНФИГА ===
+# === ✂️ НАРЕЗКА СПРАЙТОВ ===
 def get_player_sprite(class_name):
     cfg = VIEW_CONFIG["spritesheet"]
-    sheet_path = cfg["path"]
-    
-    if not os.path.exists(sheet_path):
-        return None
-        
+    if not os.path.exists(cfg["path"]): return None
     try:
-        sheet = Image.open(sheet_path).convert("RGBA")
-        
-        # Вычисляем размеры одного кадра по сетке из файла конфигурации
+        sheet = Image.open(cfg["path"]).convert("RGBA")
         frame_w = sheet.width // cfg["columns"]
         frame_h = sheet.height // cfg["rows"]
-        
-        # Получаем индексы строки и колонки для класса
-        mapping = cfg["mapping"]
-        if class_name not in mapping:
-            return None
-            
-        col, row = mapping[class_name]
-        
-        left = col * frame_w
-        top = row * frame_h
-        right = left + frame_w
-        bottom = top + frame_h
-        
-        return sheet.crop((left, top, right, bottom))
-    except Exception as e:
-        print(f"Ошибка нарезки спрайта {class_name}: {e}")
-        return None
+        col, row = cfg["mapping"].get(class_name, (0,0))
+        return sheet.crop((col * frame_w, row * frame_h, col * frame_w + frame_w, row * frame_h + frame_h))
+    except Exception: return None
 
+# === СЕССИЯ ИГРЫ ===
 class GameSession:
     def __init__(self):
         self.state = "IDLE"
@@ -70,46 +51,39 @@ class GameSession:
         self.boss_name = ""
         self.boss_hp = 0
         self.boss_max_hp = 0
+        self.boss_base_def = 0.0
         self.boss_attacks = []
-        self.boss_phys_def = 0.0
-        self.boss_mag_def = 0.0
         self.turn_order = []
         
-        # БАФФЫ КОМАНДЫ
-        self.atk_buff_value = 0.0   
-        self.atk_buff_turns = 0     
-        self.def_buff_value = 0.0   
-        self.def_buff_turns = 0     
+        # Индивидуальные стакающиеся баффы
+        self.party_buffs = {"atk": {}, "def": {}, "regen": [], "vamp": {}}
+        self.boss_debuffs = {"def_down": {}, "atk_down": {}, "dots": []}
         
-        # СЧЕТЧИКИ БОССА
         self.boss_cooldown_counter = 0
         self.boss_slow_stacks = 0
-        self.boss_debuffs = []
 
 session = GameSession()
 
-# === 🎉 ДИНАМИЧЕСКАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЯ БИТВЫ ===
+# === 🎉 ОРИГИНАЛЬНАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ПОЛЯ БОЯ ===
 def generate_battle_image(current_player_id=None, boss_action_ready=False):
-    canvas_cfg = VIEW_CONFIG["canvas"]
     boss_cfg = VIEW_CONFIG["boss_display"]
     party_cfg = VIEW_CONFIG["party_display"]
 
     try:
         bg = Image.open("assets/background.png").convert("RGBA")
     except FileNotFoundError:
-        bg = Image.new("RGBA", (canvas_cfg["width"], canvas_cfg["height"]), (40, 40, 40, 255))
+        bg = Image.new("RGBA", (800, 400), (40, 40, 40, 255))
         
     draw = ImageDraw.Draw(bg)
     
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     try:
-        font_name = ImageFont.truetype(font_path, 12)
-        font_hp = ImageFont.truetype(font_path, 10)
+        font_name = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font_hp = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 10)
     except IOError:
         font_name = ImageFont.load_default()
         font_hp = ImageFont.load_default()
 
-    # Поиск картинки босса
+    # Отрисовка босса
     boss_filename = f"assets/{session.boss_name.lower().replace(' ', '-')}.png"
     if not os.path.exists(boss_filename):
         boss_filename = "assets/boss.png"
@@ -118,7 +92,6 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     
     try:
         boss_img = Image.open(boss_filename).convert("RGBA")
-        # Рассчитываем пропорции автоматически
         aspect = boss_img.width / boss_img.height
         boss_w = int(boss_cfg["target_height"] * aspect)  
         boss_h = boss_cfg["target_height"]
@@ -129,36 +102,22 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         boss_w, boss_h = boss_cfg["default_width"], boss_cfg["default_height"]
         draw.rectangle([boss_x, boss_y, boss_x + boss_w, boss_y + boss_h], fill=(200, 50, 50, 255))
     
-    # Расчет зарядки у босса
+    # Тексты босса
+    total_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
     alive_count = len([p for p in session.players.values() if p["is_alive"]])
-    if alive_count >= 5: current_max_cd = 3
-    elif alive_count >= 3: current_max_cd = 2
-    else: current_max_cd = 1
+    max_cd = 3 if alive_count >= 5 else 2 if alive_count >= 3 else 1
     
-    cd_text = "⚠️ ПОДГОТОВКА УДАРА!" if boss_action_ready else f"⏳ Зарядка атаки: {session.boss_cooldown_counter}/{current_max_cd}"
-    
-    draw.text((boss_x, boss_y - 60), f"{session.boss_name} (🛡️{int(session.boss_phys_def*100)}% 🔮{int(session.boss_mag_def*100)}%)", fill="white", font=font_name)
+    draw.text((boss_x, boss_y - 60), f"👹 {session.boss_name} (🛡️ Защита: {int(total_def*100)}%)", fill="white", font=font_name)
+    cd_text = "⚠️ ПОДГОТОВКА УДАРА!" if boss_action_ready else f"⏳ Зарядка атаки: {session.boss_cooldown_counter}/{max_cd}"
     draw.text((boss_x, boss_y - 45), cd_text, fill="orange" if boss_action_ready else "#87CEEB", font=font_name)
     
-    # Полоска здоровья босса подстраивается под динамическую ширину boss_w
+    # Полоска ХП босса
     draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20))
     hp_percent = session.boss_hp / session.boss_max_hp
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
-    draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp}", fill="white", font=font_hp)
+    draw.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp} HP", fill="white", font=font_hp)
 
-    if session.boss_debuffs:
-        debuff_txt = "Эффекты: " + ", ".join([f"{d['type']}({d['duration']}т)" for d in session.boss_debuffs])
-        draw.text((boss_x, boss_y - 5), debuff_txt, fill="#FF6347", font=font_hp)
-
-    # Вывод баффов рейда
-    buff_y = 20
-    if session.atk_buff_turns > 0:
-        draw.text((320, buff_y), f"⚔️ Атака: +{int(session.atk_buff_value*100)}% ({session.atk_buff_turns}х)", fill="#FFD700", font=font_name)
-        buff_y += 20
-    if session.def_buff_turns > 0:
-        draw.text((320, buff_y), f"🛡️ Щит: +{int(session.def_buff_value*100)}% ({session.def_buff_turns}х)", fill="#00FFFF", font=font_name)
-
-    # Отрисовка отряда на основе параметров из внешнего JSON
+    # Отрисовка отряда на основе оригинальных параметров
     p_w, p_h = party_cfg["sprite_width"], party_cfg["sprite_height"]
     start_x = party_cfg["start_x"]
     spacing_x = party_cfg["spacing_x"]
@@ -166,21 +125,17 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
 
     for idx, p_id in enumerate(reversed(session.turn_order)):
         player = session.players[p_id]
-        if not player["is_alive"]:
-            continue
+        if not player["is_alive"]: continue
             
         real_idx = len(session.turn_order) - 1 - idx
-        is_his_turn = (p_id == current_player_id)
-        
         x = start_x + (real_idx * spacing_x)
         y = base_y - (real_idx * party_cfg["perspective_step_y"])
 
-        if is_his_turn:
+        if p_id == current_player_id:
             x -= party_cfg["attacker_advance_x"]
             y += party_cfg["attacker_advance_y"]
             
         p_img = get_player_sprite(player['class'])
-        
         if p_img is not None:
             p_img = p_img.resize((p_w, p_h), Image.Resampling.NEAREST)
             bg.paste(p_img, (x, y), p_img)
@@ -188,14 +143,10 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
             color = (80, 80, 220) if player['class'] == 'бард' else (220, 180, 60)
             draw.rectangle([x, y, x + p_w, y + p_h], fill=color)
 
-        display_name = player["name"][:10]
-        name_color = "#FFD700" if is_his_turn else "white"
+        name_color = "#FFD700" if p_id == current_player_id else "white"
+        p_name = player["name"][:10] + (" [С]" if player.get("strafe_turns", 0) > 0 else "")
         
-        p_debuffs = player.get("debuffs", [])
-        if p_debuffs:
-            display_name += f" [{p_debuffs[0]['type'][:3]}]"
-
-        draw.text((x, y - 35), display_name, fill=name_color, font=font_name)
+        draw.text((x, y - 35), p_name, fill=name_color, font=font_name)
         draw.rectangle([x, y - 15, x + p_w, y - 8], fill=(60, 20, 20))
         p_hp_percent = player["hp"] / 100
         draw.rectangle([x, y - 15, x + int(p_w * p_hp_percent), y - 8], fill=(40, 220, 40))
@@ -205,432 +156,347 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     img_byte_arr.seek(0)
     return discord.File(fp=img_byte_arr, filename="battle.png")
 
+# === СООБЩЕНИЕ СО СТАТУСАМИ ===
+def generate_status_text():
+    text = "📋 **СОСТОЯНИЕ ПОЛЯ БОЯ:**\n"
+    if session.party_buffs["atk"]:
+        total = int(sum(b["value"] for b in session.party_buffs["atk"].values()) * 100)
+        dur = max(b["duration"] for b in session.party_buffs["atk"].values())
+        text += f"🟢 **Атака отряда:** +{total}% (Осталось ходов: {dur})\n"
+    if session.party_buffs["def"]:
+        total = int(sum(b["value"] for b in session.party_buffs["def"].values()) * 100)
+        dur = max(b["duration"] for b in session.party_buffs["def"].values())
+        text += f"🛡️ **Защита отряда:** +{total}% (Осталось ходов: {dur})\n"
+    if session.party_buffs["regen"]:
+        total = len(session.party_buffs["regen"]) * 7
+        dur = max(b["duration"] for b in session.party_buffs["regen"])
+        text += f"❤️ **Регенерация:** +{total} HP/ход (Осталось ходов: {dur})\n"
+    if session.party_buffs["vamp"]:
+        dur = max(b["duration"] for b in session.party_buffs["vamp"].values())
+        text += f"🦇 **Вампиризм:** Активен (Осталось ходов: {dur})\n"
+    
+    if session.boss_debuffs["def_down"]:
+        total = int(sum(b["value"] for b in session.boss_debuffs["def_down"].values()) * 100)
+        dur = max(b["duration"] for b in session.boss_debuffs["def_down"].values())
+        text += f"🔴 **Раскол брони босса:** -{total}% (Осталось ходов: {dur})\n"
+    if session.boss_debuffs["atk_down"]:
+        total = int(sum(b["value"] for b in session.boss_debuffs["atk_down"].values()) * 100)
+        dur = max(b["duration"] for b in session.boss_debuffs["atk_down"].values())
+        text += f"📉 **Слабость босса:** -{total}% урона (Осталось ходов: {dur})\n"
+    if session.boss_debuffs["dots"]:
+        for d in session.boss_debuffs["dots"]:
+            text += f"🔥 **{d['type'].capitalize()} на боссе:** {d['damage']} урон/ход (Осталось ходов: {d['duration']})\n"
+            
+    # Собираем дебаффы, которые висят на игроках
+    player_debuffs = {}
+    for p in session.players.values():
+        if p["is_alive"]:
+            for d in p["debuffs"]:
+                if d["type"] not in player_debuffs or d["duration"] > player_debuffs[d["type"]]:
+                    player_debuffs[d["type"]] = d["duration"]
+                    
+    for dtype, dur in player_debuffs.items():
+        text += f"🤒 **Дебафф на отряде ({dtype.capitalize()}):** Осталось ходов: {dur}\n"
+            
+    if "\n" not in text[25:]: text += "*Эффектов нет*\n"
+    return text
 
-# === ℹ️ ИНТЕРАКТИВНЫЕ КНОПКИ С СКРЫТЫМ ОПИСАНИЕМ НАВЫКОВ ===
+# === МЕНЮ ВЫБОРА ЦЕЛИ ===
+class TargetSelect(discord.ui.Select):
+    def __init__(self, player, skill, allies):
+        opts = [discord.SelectOption(label=a["name"], description=f"Класс: {a['class']} | HP: {a['hp']}", value=str(a["id"])) for a in allies]
+        super().__init__(placeholder="Выберите союзника...", options=opts)
+        self.player, self.skill = player, skill
+
+    async def callback(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != str(self.player["id"]):
+            await interaction.response.send_message("❌ Не ваш ход!", ephemeral=True)
+            return
+        self.view.chosen_target = self.values[0]
+        self.view.stop()
+        await interaction.response.defer()
+
+class TargetView(discord.ui.View):
+    def __init__(self, player, skill, allies, timeout=30):
+        super().__init__(timeout=timeout)
+        self.chosen_target = None
+        self.add_item(TargetSelect(player, skill, allies))
+
+# === КНОПКИ ДЕЙСТВИЙ ИГРОКА ===
 class TurnButtons(discord.ui.View):
     def __init__(self, player, timeout=30):
         super().__init__(timeout=timeout)
         self.player = player
         self.chosen_skill = None
-        
-        player_class = player["class"]
-        skills = CLASS_SKILLS.get(player_class, [])
-        
-        # Кнопки боевых навыков
-        for skill in skills:
-            button = discord.ui.Button(
-                label=skill["name"], 
-                custom_id=skill["id"], 
-                style=discord.ButtonStyle.primary
-            )
-            button.callback = self.make_callback(skill)
-            self.add_item(button)
-            
-        # Дополнительная кнопка скрытой персональной подсказки
-        info_button = discord.ui.Button(
-            label="ℹ️ Описание навыков",
-            custom_id=f"info_{player['id']}",
-            style=discord.ButtonStyle.secondary
-        )
-        info_button.callback = self.show_skills_info
-        self.add_item(info_button)
+        for skill in CLASS_SKILLS.get(player["class"], []):
+            btn = discord.ui.Button(label=skill["name"], custom_id=skill["id"], style=discord.ButtonStyle.primary)
+            btn.callback = self.make_callback(skill)
+            self.add_item(btn)
+        info_btn = discord.ui.Button(label="ℹ️ Описание", custom_id=f"info_{player['id']}", style=discord.ButtonStyle.secondary)
+        info_btn.callback = self.show_skills_info
+        self.add_item(info_btn)
 
     def make_callback(self, skill):
         async def callback(interaction: discord.Interaction):
-            if str(interaction.user.id) != str(self.player["id"]):
-                await interaction.response.send_message("❌ Сейчас не ваш ход!", ephemeral=True)
-                return
-                
+            if str(interaction.user.id) != str(self.player["id"]): return await interaction.response.send_message("❌ Не ваш ход!", ephemeral=True)
             self.chosen_skill = skill
-            for item in self.children:
-                item.disabled = True
-                
+            for item in self.children: item.disabled = True
             await interaction.response.defer()
             self.stop()
-            
         return callback
 
-    # Функция отправки эфемерального (скрытого) сообщения
     async def show_skills_info(self, interaction: discord.Interaction):
-        if str(interaction.user.id) != str(self.player["id"]):
-            await interaction.response.send_message("❌ Вы можете смотреть описание только в свой ход!", ephemeral=True)
-            return
-            
-        player_class = self.player["class"]
-        skills = CLASS_SKILLS.get(player_class, [])
-        
-        info_text = f"📖 **Шпаргалка по навыкам класса [{player_class.upper()}]:**\n\n"
-        for s in skills:
-            dmg_icon = "🗡️" if s.get("dmg_type") == "physical" else "🔮"
-            info_text += f"• **{s['name']}**\n"
-            info_text += f"  └ Базовый урон: {s.get('damage', 0)} {dmg_icon if s.get('damage', 0) > 0 else ''}\n"
-            if s.get('heal', 0) > 0:
-                info_text += f"  └ Исцеление команды: +{s['heal']} ❤️\n"
-            if s.get("buff_turns", 0) > 0:
-                if s.get("buff_atk_pct", 0) > 0:
-                    info_text += f"  └ Бафф: +{int(s['buff_atk_pct']*100)}% к атаке на {s['buff_turns']}х.\n"
-                if s.get("buff_def_pct", 0) > 0:
-                    info_text += f"  └ Бафф: +{int(s['buff_def_pct']*100)}% к щиту на {s['buff_turns']}х.\n"
-            if s.get("debuff"):
-                info_text += f"  └ Эффект дебаффа: [{s['debuff']['type']}] на {s['debuff']['duration']} тиков.\n"
-            info_text += f"  └ *Описание: {s.get('desc', 'Описание отсутствует')}*\n\n"
-            
-        await interaction.response.send_message(info_text, ephemeral=True)
-
-    async def on_timeout(self):
-        self.stop()
+        if str(interaction.user.id) != str(self.player["id"]): return
+        text = f"📖 **Шпаргалка [{self.player['class'].upper()}]:**\n\n"
+        for s in CLASS_SKILLS.get(self.player["class"], []): text += f"• **{s['name']}**\n  └ *{s.get('desc', '')}*\n\n"
+        await interaction.response.send_message(text, ephemeral=True)
 
 
 @bot.event
-async def on_ready():
-    print(f'✅ Бот {bot.user} запущен и готов к RPG рейдам!')
+async def on_ready(): print(f'✅ Бот {bot.user} запущен!')
 
+# === ОСНОВНОЙ ЦИКЛ БОЯ ===
 @bot.command(name="старт")
 async def start_boss(ctx):
-    """Команда для запуска пошагового боя с яростью босса и анти-абузом"""
-    global session, BOSSES_LIST, CLASS_SKILLS, VIEW_CONFIG, battle_message
-    
+    global session, CLASS_SKILLS, BOSSES_LIST, VIEW_CONFIG
     CLASS_SKILLS, BOSSES_LIST, VIEW_CONFIG = load_game_data()
     
-    if session.state != "IDLE":
-        await ctx.send("⚠️ Битва или сбор уже идут!")
-        return
+    if session.state != "IDLE": return await ctx.send("⚠️ Битва уже идет!")
 
-    current_boss = random.choice(BOSSES_LIST)
-    
+    boss = random.choice(BOSSES_LIST)
+    session.__init__()
     session.state = "RECRUITING"
-    session.players.clear()
-    session.boss_name = current_boss["name"]
-    session.boss_hp = current_boss["hp"]
-    session.boss_max_hp = current_boss["hp"]
-    session.boss_attacks = current_boss.get("attacks", [])
-    session.boss_phys_def = current_boss.get("physical_def", 0.0)
-    session.boss_mag_def = current_boss.get("magical_def", 0.0)
-    session.boss_debuffs.clear()
+    session.boss_name, session.boss_hp, session.boss_max_hp = boss["name"], boss["hp"], boss["hp"]
+    session.boss_base_def, session.boss_attacks = boss.get("defense", 0.0), boss.get("attacks", [])
     
-    # Сброс таймеров и накопления иммунитета
-    session.boss_cooldown_counter = 0
-    session.boss_slow_stacks = 0
-    session.atk_buff_value = 0.0
-    session.atk_buff_turns = 0
-    session.def_buff_value = 0.0
-    session.def_buff_turns = 0
-    
-    await ctx.send(
-        f"🚨 **ВНИМАНИЕ! Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!** 🚨\n"
-        f"У вас есть 1 минута, чтобы присоединиться!\n"
-        f"Пишите: `!присоединиться [класс]`"
-    )
-
+    await ctx.send(f"🚨 **Появился босс: {session.boss_name} [❤️ {session.boss_hp} HP]!**\nПишите: `!присоединиться [класс]`")
     await asyncio.sleep(60)
 
-    real_players_count = len(session.players)
-    if real_players_count == 0:
+    if len(session.players) == 0:
         session.state = "IDLE"
-        await ctx.send(f"😔 Никто из игроков не пришел на битву. Рейд отменен.")
-        return
+        return await ctx.send("😔 Никто не пришел.")
 
-    # Заполняем лобби ботами ровно до 7 участников
-    total_slots = 7
-    if real_players_count < total_slots:
-        needed_bots = total_slots - real_players_count
-        for i in range(1, needed_bots + 1):
-            bot_id = f"npc_bot{i}"
-            bot_class = random.choice(AVAILABLE_CLASSES)
-            session.players[bot_id] = {
-                "id": bot_id,
-                "name": f"npc_bot{i}",
-                "class": bot_class,
-                "hp": 100,
-                "is_alive": True,
-                "is_npc": True,
-                "debuffs": []
-            }
+    for i in range(1, 8 - len(session.players)):
+        bot_id = f"npc_bot{i}"
+        session.players[bot_id] = {"id": bot_id, "name": bot_id, "class": random.choice(AVAILABLE_CLASSES), "hp": 100, "is_alive": True, "is_npc": True, "strafe_turns": 0, "debuffs": []}
 
     session.state = "BATTLING"
     session.turn_order = list(session.players.keys())
     random.shuffle(session.turn_order)
     
-    img_file = generate_battle_image()
-    battle_message = await ctx.send(content="⚔️ **Битва начинается! Подготовка поля боя...**", file=img_file)
+    battle_msg = await ctx.send(content="⚔️ **Битва начинается!**", file=generate_battle_image())
+    status_msg = await ctx.send(content=generate_status_text())
     await asyncio.sleep(2)
 
-    round_number = 1
     while session.boss_hp > 0:
-        alive_players = [p for p in session.players.values() if p["is_alive"]]
-        if not alive_players:
-            break
+        if not [p for p in session.players.values() if p["is_alive"]]: break
 
+        # Безопасное получение текущего игрока
+        if not session.turn_order: break
         p_id = session.turn_order[0]
         player = session.players[p_id]
         
         if not player["is_alive"]:
-            session.turn_order.append(session.turn_order.pop(0))
-            continue
-            
-        # === ⏳ ТИКИ ДЕБАФФОВ НА НАЧАЛО ХОДА ИГРОКА ===
-        debuff_damage = 0
-        debuff_notes = ""
-        active_p_debuffs = player.get("debuffs", [])
-        for debuff in list(active_p_debuffs):
-            if debuff["type"] in ["горение", "отравление"]:
-                debuff_damage += debuff["damage"]
-                debuff_notes += f"\n🔥/🦨 Дебафф наносит {player['name']} **{debuff['damage']}** урона."
-            debuff["duration"] -= 1
-            if debuff["duration"] <= 0:
-                active_p_debuffs.remove(debuff)
-                debuff_notes += f"\n✨ Эффект [{debuff['type']}] на {player['name']} рассеялся."
-
-        player["hp"] = max(0, player["hp"] - debuff_damage)
-        if player["hp"] <= 0:
-            player["is_alive"] = False
-            if player["id"] in session.turn_order: session.turn_order.remove(player["id"])
-            img_file = generate_battle_image(current_player_id=None)
-            await battle_message.edit(content=f"💀 {player['name']} погиб от периодического урона дебаффов!{debuff_notes}", attachments=[img_file], view=None)
-            await asyncio.sleep(5.0)
+            session.turn_order.pop(0)
             continue
 
-        img_file = generate_battle_image(current_player_id=p_id)
-        chosen_skill = None
-        
+        action_text, tick_text, dmg = "", "", 0
+        is_ode = False
+        boss_trigger = False
+
         if player.get("is_npc"):
-            available_npc_skills = CLASS_SKILLS.get(player["class"], [])
-            chosen_skill = random.choice(available_npc_skills)
-            await battle_message.edit(
-                content=f"🔹 **--- ХОД ОТРЯДА ---** 🔹{debuff_notes}\n🤖 **Ходит {player['name']} ({player['class']}).** Выбирает заклинание...",
-                attachments=[img_file], view=None
-            )
+            skill = random.choice(CLASS_SKILLS[player["class"]])
+            await battle_msg.edit(content=f"🤖 **Ходит {player['name']} ({player['class']}).**", attachments=[generate_battle_image(p_id)], view=None)
             await asyncio.sleep(1.5)
         else:
-            view = TurnButtons(player, timeout=30)
-            await battle_message.edit(
-                content=f"🔹 **--- ХОД ОТРЯДА ---** 🔹{debuff_notes}\n🛑 **Ход игрока <@{player['id']}> ({player['class']}).** Ваш черед на передовой! Выберите навык:",
-                attachments=[img_file], view=view
-            )
+            view = TurnButtons(player)
+            await battle_msg.edit(content=f"🛑 **Ход <@{player['id']}> ({player['class']}).** Выберите навык:", attachments=[generate_battle_image(p_id)], view=view)
             await view.wait()
-            chosen_skill = view.chosen_skill
+            skill = view.chosen_skill
+            
+        target_id = None
+        if skill and skill.get("target") == "ally":
+            if player.get("is_npc"):
+                allies = [p for p in session.players.values() if p["is_alive"] and p["id"] != p_id]
+                target_id = str(random.choice(allies)["id"]) if allies else None
+            else:
+                allies = [p for p in session.players.values() if p["is_alive"] and (skill["id"] != "bard_ode" or str(p["id"]) != str(p_id))]
+                if allies:
+                    t_view = TargetView(player, skill, allies)
+                    await battle_msg.edit(content=f"🎯 Выберите цель для **{skill['name']}**:", view=t_view)
+                    await t_view.wait()
+                    target_id = str(t_view.chosen_target) if t_view.chosen_target else None
 
-        damage = 0
-        action_text = ""
-        slow_applied = False
-        
-        if chosen_skill is None:
-            action_text = f"пропустил свой ход! 💤"
+        if skill is None:
+            action_text += f"\n💤 Пропустил свой ход!"
         else:
-            skill_name = chosen_skill["name"]
-            base_damage = chosen_skill["damage"]
-            dmg_type = chosen_skill.get("dmg_type", "none")
-            heal_amount = chosen_skill["heal"]
-            b_atk_pct = chosen_skill.get("buff_atk_pct", 0.0)
-            b_def_pct = chosen_skill.get("buff_def_pct", 0.0)
-            b_turns = chosen_skill.get("buff_turns", 0)
-            skill_debuff = chosen_skill.get("debuff", None)
+            sid = skill["id"]
+            action_text += f"\nИспользует **{skill['name']}**"
             
-            action_text = f"использует **{skill_name}**"
-            
-            atk_mod = 1.0
-            if session.atk_buff_turns > 0: atk_mod += session.atk_buff_value
-            for d in player.get("debuffs", []):
-                if d["type"] == "ослабление атаки": atk_mod -= d.get("power_pct", 0.0)
-            
-            if base_damage > 0:
-                base_damage = int(base_damage * max(0.1, atk_mod))
-                if dmg_type == "physical": damage = max(1, int(base_damage * (1 - session.boss_phys_def)))
-                elif dmg_type == "magical": damage = max(1, int(base_damage * (1 - session.boss_mag_def)))
-                else: damage = base_damage
-            
-            if heal_amount > 0:
-                action_text += f" (+{heal_amount} HP команде!)"
+            base_dmg = 0
+            if sid == "warrior_execute": base_dmg = random.randint(79, 80) if session.boss_hp < session.boss_max_hp/2 else random.randint(39, 40)
+            elif sid in ["mage_fireball", "mage_ice"]: base_dmg = random.randint(29, 45)
+            elif sid == "mage_lightning": base_dmg = random.randint(45, 60)
+            elif sid in ["bard_solo", "priest_smite"]: base_dmg = random.randint(15, 25)
+            elif sid == "ranger_shot": base_dmg = random.randint(45, 65)
+            elif sid == "necro_touch": base_dmg = random.randint(15, 35)
+
+            if base_dmg > 0:
+                atk_mod = 1.0 + sum(b["value"] for b in session.party_buffs["atk"].values()) - sum(d.get("value", 0.3) for d in player["debuffs"] if d["type"]=="ослабление")
+                boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
+                dmg = max(1, int((base_dmg * max(0.1, atk_mod)) * (1.0 - boss_def)))
+                action_text += f" и наносит **{dmg}** урона!"
+                
+            if sid == "warrior_shield": session.party_buffs["def"]["warrior_shield"] = {"value": 0.25, "duration": 7}; action_text += " 🛡️ Защита усилена!"
+            elif sid == "warrior_provoke":
+                session.boss_debuffs["def_down"]["warrior_provoke"] = {"value": 0.20, "duration": 7}; action_text += " 📢 Босс спровоцирован!"
+                if random.random() < 0.3:
+                    c_dmg = max(1, int(random.randint(40,65) * (1.0 - sum(b["value"] for b in session.party_buffs["def"].values()))))
+                    player["hp"] = max(0, player["hp"] - c_dmg); action_text += f"\n⚠️ Босс отвечает вне очереди! Получено **{c_dmg}** урона!"
+                    if player["hp"] == 0: player["is_alive"] = False
+            elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 9, "duration": 3}); action_text += " 🔥 Босс подожжен!"
+            elif sid == "mage_ice" and random.random() < 0.9:
+                if session.boss_slow_stacks >= 2: action_text += " ❌ У босса иммунитет ко льду!"
+                else: session.boss_slow_stacks += 1; session.boss_cooldown_counter = max(0, session.boss_cooldown_counter - 1); action_text += " ❄️ Зарядка заморожена!"
+            elif sid == "mage_lightning" and random.random() < 0.3: player["hp"] = max(1, player["hp"] - 30); action_text += "\n⚠️ Маг теряет 30 HP от перегрузки!"
+            elif sid == "bard_regen": session.party_buffs["regen"].append({"duration": 4}); session.party_buffs["atk"]["bard_regen"] = {"value": 0.10, "duration": 4}; action_text += " 🎺 Атака и реген отряда!"
+            elif sid == "bard_ode" and target_id: 
+                session.party_buffs["atk"]["bard_ode"] = {"value": 0.20, "duration": 4}
+                if target_id in session.turn_order: session.turn_order.remove(target_id)
+                session.turn_order.insert(1, target_id)
+                action_text += " 🎸 Цель получает ход вне очереди!"
+                is_ode = True
+            elif sid == "priest_smite":
                 for p in session.players.values():
-                    if p["is_alive"]: p["hp"] = min(100, p["hp"] + heal_amount)
+                    if p["is_alive"]: p["hp"] = min(100, p["hp"] + random.randint(7,12))
+            elif sid == "priest_great_heal" and target_id: session.players[target_id]["hp"] = min(100, session.players[target_id]["hp"] + random.randint(70,90))
+            elif sid == "priest_heal":
+                for p in session.players.values():
+                    if p["is_alive"]: p["hp"] = min(100, p["hp"] + random.randint(30,45))
+            elif sid == "ranger_strafe": player["strafe_turns"] = 4; action_text += " 🌪️ Стойка стрейфа активирована!"
+            elif sid == "ranger_focus": session.boss_debuffs["def_down"]["ranger_focus"] = {"value": 0.40, "duration": 6}; action_text += " 🎯 Защита босса снижена на 40%!"
+            elif sid == "necro_vampire": session.party_buffs["vamp"]["necro_vampire"] = {"duration": 7}; action_text += " 🦇 Наложен Вампиризм!"
+            elif sid == "necro_curse": session.boss_debuffs["atk_down"]["necro_curse"] = {"value": 0.30, "duration": 4}; action_text += " 💀 Атака босса снижена на 30%!"
 
-            if b_turns > 0:
-                if b_atk_pct > 0:
-                    session.atk_buff_value = b_atk_pct
-                    session.atk_buff_turns = b_turns
-                if b_def_pct > 0:
-                    session.def_buff_value = b_def_pct
-                    session.def_buff_turns = b_turns
+        session.boss_hp = max(0, session.boss_hp - dmg)
+        if session.party_buffs["vamp"] and dmg > 0:
+            v_heal = int(dmg * 0.5); player["hp"] = min(100, player["hp"] + v_heal); action_text += f" 🦇 Отхил вампиризмом: {v_heal} HP!"
 
-            # === 🎯 НАКЛАДЫВАНИЕ ДЕБАФФОВ НА БОССА ===
-            if skill_debuff:
-                db_type = skill_debuff["type"]
-                
-                if db_type == "замедление":
-                    if session.boss_slow_stacks >= 2:
-                        action_text += f"\n❌ **ИММУНИТЕТ!** Босс адаптировался к магии льда, [Замедление] больше не действует!"
-                    else:
-                        session.boss_slow_stacks += 1
-                        slow_applied = True
-                        session.boss_debuffs.append({
-                            "type": db_type,
-                            "duration": skill_debuff["duration"],
-                            "power_pct": skill_debuff.get("power_pct", 0.0)
-                        })
-                        action_text += f"\n❄️ **ЗАМЕДЛЕНИЕ!** Атака босса отложена на 1 ход! (Сопротивление босса: {session.boss_slow_stacks}/2)"
-                else:
-                    session.boss_debuffs.append({
-                        "type": db_type,
-                        "damage": skill_debuff.get("damage", 0),
-                        "duration": skill_debuff["duration"],
-                        "power_pct": skill_debuff.get("power_pct", 0.0)
-                    })
-                    action_text += f"\n💥 На босса наложен эффект: **{db_type}** ({skill_debuff['duration']}т)"
+        # === 🔄 ГЛОБАЛЬНЫЙ ТИК ХОДА (1 кнопка = 1 ход) ===
+        if not is_ode and session.boss_hp > 0:
+            # Снижаем таймеры баффов отряда
+            for cat in ["atk", "def", "vamp"]:
+                for sid_key in list(session.party_buffs[cat].keys()):
+                    session.party_buffs[cat][sid_key]["duration"] -= 1
+                    if session.party_buffs[cat][sid_key]["duration"] <= 0: del session.party_buffs[cat][sid_key]
+                    
+            # Снижаем таймеры дебаффов босса
+            for cat in ["def_down", "atk_down"]:
+                for sid_key in list(session.boss_debuffs[cat].keys()):
+                    session.boss_debuffs[cat][sid_key]["duration"] -= 1
+                    if session.boss_debuffs[cat][sid_key]["duration"] <= 0: del session.boss_debuffs[cat][sid_key]
 
-        session.boss_hp = max(0, session.boss_hp - damage)
-        
-        if session.atk_buff_turns > 0: session.atk_buff_turns -= 1
-        if session.def_buff_turns > 0: session.def_buff_turns -= 1
-        
-        # Тики дотов на боссе
-        boss_tick_damage = 0
-        boss_tick_notes = ""
-        for d in list(session.boss_debuffs):
-            if d["type"] in ["горение", "отравление"]:
-                boss_tick_damage += d.get("damage", 0)
-                boss_tick_notes += f"\n🔥 Босс теряет **{d.get('damage', 0)}** HP от эффекта [{d['type']}]."
-            d["duration"] -= 1
-            if d["duration"] <= 0:
-                session.boss_debuffs.remove(d)
-                if d["type"] == "замедление":
-                    session.boss_slow_stacks = 0
-                    boss_tick_notes += f"\n✨ Эффект замедления спал. Босс сбросил сопротивление льду!"
-                else:
-                    boss_tick_notes += f"\n✨ Эффект [{d['type']}] на боссе рассеялся."
-                
-        session.boss_hp = max(0, session.boss_hp - boss_tick_damage)
-
-        # === 🔄 СЧЕТЧИК ХОДОВ БОССА С ДИНАМИЧЕСКИМ УСКОРЕНИЕМ (ЯРОСТЬ) ===
-        current_alive_count = len([p for p in session.players.values() if p["is_alive"]])
-        
-        if current_alive_count >= 5: max_boss_cooldown = 3
-        elif current_alive_count >= 3: max_boss_cooldown = 2
-        else: max_boss_cooldown = 1
-        
-        if slow_applied:
-            boss_cooldown_notice = "\n⏳ Счетчик атаки босса замерз из-за замедления!"
-            boss_trigger = False
-        else:
-            session.boss_cooldown_counter += 1
-            boss_cooldown_notice = f"\n⏳ Зарядка атаки босса: {session.boss_cooldown_counter}/{max_boss_cooldown}"
+            # Регенерация
+            regen_heal = len(session.party_buffs["regen"]) * 7
+            if regen_heal > 0:
+                for p in session.players.values():
+                    if p["is_alive"]: p["hp"] = min(100, p["hp"] + regen_heal)
+                tick_text += f"\n💚 Реген: отряд восстановил {regen_heal} HP."
+            for r in session.party_buffs["regen"]: r["duration"] -= 1
+            session.party_buffs["regen"] = [r for r in session.party_buffs["regen"] if r["duration"] > 0]
             
-            if session.boss_cooldown_counter >= max_boss_cooldown:
+            # Доты на боссе (урон каждый ход!)
+            dot_dmg = sum(d["damage"] for d in session.boss_debuffs["dots"])
+            if dot_dmg > 0:
+                session.boss_hp = max(0, session.boss_hp - dot_dmg)
+                tick_text += f"\n🔥 Босс получает {dot_dmg} период. урона."
+            for d in session.boss_debuffs["dots"]: d["duration"] -= 1
+            session.boss_debuffs["dots"] = [d for d in session.boss_debuffs["dots"] if d["duration"] > 0]
+            
+            # Дебаффы на игроках (яд/горение)
+            for p in session.players.values():
+                if not p["is_alive"]: continue
+                p_dot = sum(9 for d in p["debuffs"] if d["type"] in ["горение", "отравление"])
+                if p_dot > 0:
+                    p["hp"] -= p_dot
+                    tick_text += f"\n☠️ {p['name']} получает {p_dot} урон от дебаффов."
+                    if p["hp"] <= 0:
+                        p["is_alive"] = False
+                        tick_text += f" 💀 Погиб!"
+                        if p["id"] in session.turn_order and p["id"] != p_id: session.turn_order.remove(p["id"])
+                for d in p["debuffs"]: d["duration"] -= 1
+                p["debuffs"] = [d for d in p["debuffs"] if d["duration"] > 0]
+                
+            # Авто-стрейф Рейнджера
+            for p in session.players.values():
+                if p["is_alive"] and p.get("strafe_turns", 0) > 0:
+                    boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
+                    dmg1 = max(1, int(random.randint(10,15) * (1.0 - boss_def)))
+                    dmg2 = max(1, int(random.randint(10,15) * (1.0 - boss_def)))
+                    session.boss_hp = max(0, session.boss_hp - (dmg1 + dmg2))
+                    tick_text += f"\n🏹 Авто-Стрейф ({p['name']}) наносит {dmg1} и {dmg2} урона!"
+                    p["strafe_turns"] -= 1
+                    
+            # Счетчик ходов босса
+            alive_count = len([p for p in session.players.values() if p["is_alive"]])
+            max_cd = 3 if alive_count >= 5 else 2 if alive_count >= 3 else 1
+            session.boss_cooldown_counter += 1
+            if session.boss_cooldown_counter >= max_cd:
                 boss_trigger = True
                 session.boss_cooldown_counter = 0
-            else:
-                boss_trigger = False
 
-        session.turn_order.append(session.turn_order.pop(0))
+        # Аккуратное смещение очереди
+        if session.turn_order and session.turn_order[0] == p_id:
+            popped = session.turn_order.pop(0)
+            if player["is_alive"]: session.turn_order.append(popped)
         
-        img_file = generate_battle_image(current_player_id=None, boss_action_ready=boss_trigger)
-        display_mention = player['name'] if player.get("is_npc") else f"<@{player['id']}>"
-        
-        tick_msg_text = f"\n🔥 Босс получает **{boss_tick_damage}** периодического урона." if boss_tick_damage > 0 else ""
-        await battle_message.edit(
-            content=f"⚔️ {display_mention} {action_text} и наносит **{damage}** урона!{tick_msg_text}{boss_tick_notes}{boss_cooldown_notice} (У босса: {session.boss_hp} HP)",
-            attachments=[img_file], view=None
-        )
+        await battle_msg.edit(content=f"⚔️ <@{p_id}> {action_text}{tick_text} (У босса: {session.boss_hp} HP)", attachments=[generate_battle_image(None, boss_trigger)], view=None)
+        await status_msg.edit(content=generate_status_text())
         await asyncio.sleep(5.0)
 
-        if session.boss_hp <= 0:
-            break
+        if session.boss_hp <= 0: break
 
-        # ================= 👹 ДИНАМИЧЕСКИЙ ХОД БОССА =================
+        # ================= ХОД БОССА =================
         if boss_trigger:
             alive_players = [p for p in session.players.values() if p["is_alive"]]
-            if not alive_players:
-                break
+            if not alive_players: break
                 
             boss_atk = random.choice(session.boss_attacks)
-            targets_to_hit = alive_players if boss_atk["target"] == "aoe" else [random.choice(alive_players)]
+            targets = alive_players if boss_atk["target"] == "aoe" else [random.choice(alive_players)]
+            boss_atk_text = f"👹 **{session.boss_name}** проводит {'AOE' if boss_atk['target']=='aoe' else 'точечную'} атаку **{boss_atk['name']}**!"
             
-            if boss_atk["target"] == "aoe":
-                boss_atk_text = f"👹 **{session.boss_name}** накопил ярость и проводит **AOE атаку: {boss_atk['name']}** по всему отряду!"
-            else:
-                t_mention = targets_to_hit[0]['name'] if targets_to_hit[0].get("is_npc") else f"<@{targets_to_hit[0]['id']}>"
-                boss_atk_text = f"👹 **{session.boss_name}** обрушивает накопленную мощь на {t_mention} атакой **{boss_atk['name']}**!"
-
             death_reports = ""
-            for target in targets_to_hit:
-                base_boss_dmg = random.randint(boss_atk["min_damage"], boss_atk["max_damage"])
+            for t in targets:
+                atk_mod = 1.0 - sum(b["value"] for b in session.boss_debuffs["atk_down"].values())
+                base_dmg = int(random.randint(boss_atk["min_damage"], boss_atk["max_damage"]) * max(0.1, atk_mod))
+                def_mod = 1.0 - sum(b["value"] for b in session.party_buffs["def"].values())
+                boss_damage = max(1, int(base_dmg * def_mod))
                 
-                # Ослабление атаки босса
-                boss_atk_mod = 1.0
-                for d in session.boss_debuffs:
-                    if d["type"] == "ослабление атаки": 
-                        boss_atk_mod -= d.get("power_pct", 0.0)
-                base_boss_dmg = int(base_boss_dmg * max(0.1, boss_atk_mod))
-
-                # Снижение щитом команды
-                if session.def_buff_turns > 0:
-                    boss_damage = max(1, int(base_boss_dmg * (1 - session.def_buff_value)))
-                else:
-                    boss_damage = base_boss_dmg
-                    
-                target["hp"] = max(0, target["hp"] - boss_damage)
+                t["hp"] = max(0, t["hp"] - boss_damage)
+                boss_atk_text += f"\n💥 <@{t['id']}> получает **{boss_damage}** урона."
                 
-                if boss_atk.get("effect") and target["hp"] > 0:
-                    target["debuffs"].append({
-                        "type": boss_atk["effect"]["type"],
-                        "damage": boss_atk["effect"].get("damage", 0),
-                        "duration": boss_atk["effect"]["duration"],
-                        "power_pct": boss_atk["effect"].get("power_pct", 0.0)
-                    })
-                
-                t_mention = target['name'] if target.get("is_npc") else f"<@{target['id']}>"
-                boss_atk_text += f"\n💥 {t_mention} получает **{boss_damage}** урона."
-                if boss_atk.get("effect"):
-                    boss_atk_text += f" ☣️ Наложен дебафф: **{boss_atk['effect']['type']}**"
+                if boss_atk.get("effect") and t["hp"] > 0:
+                    t["debuffs"].append({"type": boss_atk["effect"]["type"], "duration": boss_atk["effect"]["duration"], "value": boss_atk["effect"].get("value", 0.30)})
+                    boss_atk_text += f" ☣️ Наложен эффект: {boss_atk['effect']['type']}!"
 
-                if target["hp"] <= 0:
-                    target["is_alive"] = False
-                    death_reports += f"\n💀 {t_mention} погиб в бою и покидает отряд!"
-                    if target["id"] in session.turn_order:
-                        session.turn_order.remove(target["id"])
+                if t["hp"] <= 0:
+                    t["is_alive"] = False; death_reports += f"\n💀 <@{t['id']}> погиб!"
+                    if t["id"] in session.turn_order: session.turn_order.remove(t["id"])
 
-            img_file = generate_battle_image(current_player_id=None, boss_action_ready=False)
-            await battle_message.edit(content=f"{boss_atk_text}{death_reports}", attachments=[img_file], view=None)
+            await battle_msg.edit(content=f"{boss_atk_text}{death_reports}", attachments=[generate_battle_image()], view=None)
+            await status_msg.edit(content=generate_status_text())
             await asyncio.sleep(5.0)
-            round_number += 1
 
-    # === ФИНАЛ БИТВЫ ===
-    img_file = generate_battle_image()
-    if session.boss_hp <= 0:
-        await battle_message.edit(content=f"🎉 **ПОБЕДА!** **{session.boss_name}** повержен! Отряд празднует триумф! 🏆", attachments=[img_file], view=None)
-    else:
-        await battle_message.edit(content=f"💀 **ПОРАЖЕНИЕ...** Отряд полностью уничтожен. **{session.boss_name}** победил. 👹", attachments=[img_file], view=None)
-
+    if session.boss_hp <= 0: await battle_msg.edit(content=f"🎉 **ПОБЕДА!** **{session.boss_name}** повержен! 🏆", attachments=[generate_battle_image()], view=None)
+    else: await battle_msg.edit(content=f"💀 **ПОРАЖЕНИЕ...** Отряд уничтожен.", attachments=[generate_battle_image()], view=None)
     session.state = "IDLE"
 
 @bot.command(name="присоединиться", aliases=["join"])
 async def join_game(ctx, role: str = None):
-    """Команда для вступления в битву"""
-    global session, AVAILABLE_CLASSES
-    if session.state == "IDLE":
-        await ctx.send("💤 Сейчас нет активного босса. Напишите `!старт`.")
-        return
-    if session.state == "BATTLING":
-        await ctx.send("⚔️ Битва уже началась, вы опоздали!")
-        return
-    if not role or role.lower() not in AVAILABLE_CLASSES:
-        await ctx.send(f"❌ Доступные классы: {', '.join(AVAILABLE_CLASSES)}")
-        return
-
-    role = role.lower()
-    user = ctx.author
-    if str(user.id) in session.players:
-        await ctx.send(f"⚠️ Вы уже в строю!")
-        return
-
-    session.players[str(user.id)] = {
-        "id": user.id,
-        "name": user.display_name,
-        "class": role,
-        "hp": 100,
-        "is_alive": True,
-        "is_npc": False,
-        "debuffs": []
-    }
-    await ctx.send(f"✅ {user.mention} готов к бою как **{role}**!")
+    if session.state != "RECRUITING": return
+    if not role or role.lower() not in AVAILABLE_CLASSES: return await ctx.send(f"❌ Классы: {', '.join(AVAILABLE_CLASSES)}")
+    if str(ctx.author.id) in session.players: return
+    session.players[str(ctx.author.id)] = {"id": ctx.author.id, "name": ctx.author.display_name, "class": role.lower(), "hp": 100, "is_alive": True, "is_npc": False, "strafe_turns": 0, "debuffs": []}
+    await ctx.send(f"✅ {ctx.author.mention} готов как **{role}**!")
 
 bot.run(os.getenv('DISCORD_TOKEN'))
