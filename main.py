@@ -196,7 +196,7 @@ def generate_status_text():
             
     if boss_text: text += "\n👹 **Эффекты на Боссе:**\n" + boss_text
             
-    # 3. ПЕРСОНАЛЬНЫЕ СТАТУСЫ (Дебаффы босса и личные стойки)
+    # 3. ПЕРСОНАЛЬНЫЕ СТАТУСЫ
     player_text = ""
     for p in session.players.values():
         if not p["is_alive"]: continue
@@ -269,7 +269,6 @@ class TurnButtons(discord.ui.View):
         for s in CLASS_SKILLS.get(self.player["class"], []): text += f"• **{s['name']}**\n  └ *{s.get('desc', '')}*\n\n"
         await interaction.response.send_message(text, ephemeral=True)
 
-
 @bot.event
 async def on_ready(): print(f'✅ Бот {bot.user} запущен!')
 
@@ -335,10 +334,11 @@ async def start_boss(ctx):
         target_id = None
         if skill and skill.get("target") == "ally":
             if player.get("is_npc"):
-                allies = [p for p in session.players.values() if p["is_alive"] and p["id"] != p_id]
+                # Исключаем из целей самого себя и всех других бардов (защита от бесконечного цикла Оды)
+                allies = [p for p in session.players.values() if p["is_alive"] and p["id"] != p_id and not (skill["id"] == "bard_ode" and p["class"] == "бард")]
                 target_id = str(random.choice(allies)["id"]) if allies else None
             else:
-                allies = [p for p in session.players.values() if p["is_alive"] and (skill["id"] != "bard_ode" or str(p["id"]) != str(p_id))]
+                allies = [p for p in session.players.values() if p["is_alive"] and p["id"] != p_id and not (skill["id"] == "bard_ode" and p["class"] == "бард")]
                 if allies:
                     t_view = TargetView(player, skill, allies)
                     await battle_msg.edit(content=f"🎯 Выберите цель для **{skill['name']}**:", view=t_view)
@@ -378,12 +378,18 @@ async def start_boss(ctx):
                 else: session.boss_slow_stacks += 1; session.boss_cooldown_counter = max(0, session.boss_cooldown_counter - 1); action_text += " ❄️ Зарядка заморожена!"
             elif sid == "mage_lightning" and random.random() < 0.3: player["hp"] = max(1, player["hp"] - 30); action_text += "\n⚠️ Маг теряет 30 HP от перегрузки!"
             elif sid == "bard_regen": session.party_buffs["regen"].append({"duration": 4}); session.party_buffs["atk"]["bard_regen"] = {"value": 0.10, "duration": 4}; action_text += " 🎺 Атака и реген отряда!"
-            elif sid == "bard_ode" and target_id: 
-                session.party_buffs["atk"]["bard_ode"] = {"value": 0.20, "duration": 4}
-                if target_id in session.turn_order: session.turn_order.remove(target_id)
-                session.turn_order.insert(1, target_id)
-                action_text += " 🎸 Цель получает ход вне очереди!"
-                is_ode = True
+            
+            # 🔥 ИСПРАВЛЕНИЕ ОДЫ (Нет клонов, нет других бардов)
+            elif sid == "bard_ode":
+                if target_id:
+                    session.party_buffs["atk"]["bard_ode"] = {"value": 0.20, "duration": 4}
+                    if target_id in session.turn_order: session.turn_order.remove(target_id)
+                    session.turn_order.insert(1, target_id)
+                    action_text += " 🎸 Выбранный союзник получает ход вне очереди!"
+                    is_ode = True
+                else:
+                    action_text += " 🎸 Но слушать оказалось некому (барды друг другу не подпевают)!"
+            
             elif sid == "priest_smite":
                 for p in session.players.values():
                     if p["is_alive"]: p["hp"] = min(100, p["hp"] + random.randint(7,12))
@@ -464,9 +470,8 @@ async def start_boss(ctx):
         await battle_msg.edit(content=f"⚔️ <@{p_id}> {action_text}{tick_text} (У босса: {session.boss_hp} HP)", attachments=[generate_battle_image(None, boss_trigger)], view=None)
         await status_msg.edit(content=status_content)
         
-        # Динамический таймер ожидания (минимум 5 сек, максимум 12)
         lines_count = status_content.count('\n') + action_text.count('\n') + tick_text.count('\n')
-        delay = max(5.0, min(12.0, 4.0 + (lines_count * 0.4)))
+        delay = max(5.0, min(14.0, 4.0 + (lines_count * 0.4)))
         await asyncio.sleep(delay)
 
         if session.boss_hp <= 0: break
@@ -503,7 +508,7 @@ async def start_boss(ctx):
             await status_msg.edit(content=status_content)
             
             lines_count = status_content.count('\n') + boss_atk_text.count('\n') + death_reports.count('\n')
-            delay = max(5.0, min(12.0, 4.0 + (lines_count * 0.4)))
+            delay = max(5.0, min(14.0, 4.0 + (lines_count * 0.4)))
             await asyncio.sleep(delay)
 
     if session.boss_hp <= 0: await battle_msg.edit(content=f"🎉 **ПОБЕДА!** **{session.boss_name}** повержен! 🏆", attachments=[generate_battle_image()], view=None)
