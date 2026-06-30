@@ -1,0 +1,36 @@
+{
+  "canvas": {
+    "width": 800,
+    "height": 400
+  },
+  "spritesheet": {
+    "path": "assets/маг, воин, священник, рейнджер, бард, некромант.png",
+    "columns": 3,
+    "rows": 2,
+    "mapping": {
+      "маг": [0, 0],
+      "воин": [1, 0],
+      "священник": [2, 0],
+      "рейнджер": [0, 1],
+      "бард": [1, 1],
+      "некромант": [2, 1]
+    }
+  },
+  "boss_display": {
+    "target_height": 200,
+    "default_width": 200,
+    "default_height": 200,
+    "pos_x": 40,
+    "pos_y": 160
+  },
+  "party_display": {
+    "sprite_width": 75,
+    "sprite_height": 75,
+    "start_x": 450,
+    "spacing_x": 85,
+    "base_y": 235,
+    "perspective_step_y": 5,
+    "attacker_advance_x": 30,
+    "attacker_advance_y": 15
+  }
+}

@@ -18,55 +18,49 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 battle_message = None
 
+# === СЧИТЫВАНИЕ ВСЕХ КОНФИГУРАЦИОННЫХ ФАЙЛОВ ===
 def load_game_data():
     with open("skills.json", "r", encoding="utf-8") as f:
         skills_data = json.load(f)
     with open("bosses.json", "r", encoding="utf-8") as f:
         bosses_data = json.load(f)
-    return skills_data, bosses_data
+    with open("view_config.json", "r", encoding="utf-8") as f:
+        view_config = json.load(f)
+    return skills_data, bosses_data, view_config
 
-# Загружаем конфигурацию
-CLASS_SKILLS, BOSSES_LIST = load_game_data()
+CLASS_SKILLS, BOSSES_LIST, VIEW_CONFIG = load_game_data()
 AVAILABLE_CLASSES = list(CLASS_SKILLS.keys())
 
-# === ✂️ СИСТЕМА ДИНАМИЧЕСКОЙ НАРЕЗКИ СПРАЙТОВ ИГРОКОВ ===
+# === ✂️ ДИНАМИЧЕСКАЯ НАРЕЗКА СПРАЙТОВ НА ОСНОВЕ JSON-КОНФИГА ===
 def get_player_sprite(class_name):
-    sheet_path = "assets/маг, воин, священник, рейнджер, бард, некромант.png"
+    cfg = VIEW_CONFIG["spritesheet"]
+    sheet_path = cfg["path"]
+    
     if not os.path.exists(sheet_path):
         return None
         
     try:
         sheet = Image.open(sheet_path).convert("RGBA")
         
-        # Определяем размеры одного кадра (сетка 3x2)
-        frame_w = sheet.width // 3
-        frame_h = sheet.height // 2
+        # Вычисляем размеры одного кадра по сетке из файла конфигурации
+        frame_w = sheet.width // cfg["columns"]
+        frame_h = sheet.height // cfg["rows"]
         
-        # Маппинг классов на координаты сетки (колонка, строка)
-        class_coords = {
-            "маг": (0, 0),
-            "воин": (1, 0),
-            "священник": (2, 0),
-            "рейнджер": (0, 1),
-            "бард": (1, 1),
-            "некромант": (2, 1)
-        }
-        
-        if class_name not in class_coords:
+        # Получаем индексы строки и колонки для класса
+        mapping = cfg["mapping"]
+        if class_name not in mapping:
             return None
             
-        col, row = class_coords[class_name]
+        col, row = mapping[class_name]
         
-        # Вырезаем квадрат персонажа
         left = col * frame_w
         top = row * frame_h
         right = left + frame_w
         bottom = top + frame_h
         
-        sprite = sheet.crop((left, top, right, bottom))
-        return sprite
+        return sheet.crop((left, top, right, bottom))
     except Exception as e:
-        print(f"Ошибка нарезки спрайта: {e}")
+        print(f"Ошибка нарезки спрайта {class_name}: {e}")
         return None
 
 class GameSession:
@@ -94,12 +88,16 @@ class GameSession:
 
 session = GameSession()
 
-# === 🎉 ФУНКЦИЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЯ БИТВЫ ===
+# === 🎉 ДИНАМИЧЕСКАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЯ БИТВЫ ===
 def generate_battle_image(current_player_id=None, boss_action_ready=False):
+    canvas_cfg = VIEW_CONFIG["canvas"]
+    boss_cfg = VIEW_CONFIG["boss_display"]
+    party_cfg = VIEW_CONFIG["party_display"]
+
     try:
         bg = Image.open("assets/background.png").convert("RGBA")
     except FileNotFoundError:
-        bg = Image.new("RGBA", (800, 400), (40, 40, 40, 255))
+        bg = Image.new("RGBA", (canvas_cfg["width"], canvas_cfg["height"]), (40, 40, 40, 255))
         
     draw = ImageDraw.Draw(bg)
     
@@ -111,34 +109,27 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         font_name = ImageFont.load_default()
         font_hp = ImageFont.load_default()
 
-    # Динамическая загрузка уникального ассета босса
+    # Поиск картинки босса
     boss_filename = f"assets/{session.boss_name.lower().replace(' ', '-')}.png"
     if not os.path.exists(boss_filename):
         boss_filename = "assets/boss.png"
 
-    boss_y = 160
+    boss_x, boss_y = boss_cfg["pos_x"], boss_cfg["pos_y"]
     
     try:
         boss_img = Image.open(boss_filename).convert("RGBA")
-        
-        # 📐 АВТОМАТИЧЕСКИЙ РАСЧЕТ ПРОПОРЦИЙ БОССА
-        boss_target_h = 200  # Желаемая высота босса на экране
+        # Рассчитываем пропорции автоматически
         aspect = boss_img.width / boss_img.height
-        boss_w = int(boss_target_h * aspect)  # Ширина подстроится автоматически
-        boss_h = boss_target_h
-        
-        # Центрируем босса по левой стороне тропинки (базовая позиция по X = 40)
-        # Если босс широкий, он расширится вправо, не ломая левый край
-        boss_x = 40
+        boss_w = int(boss_cfg["target_height"] * aspect)  
+        boss_h = boss_cfg["target_height"]
         
         boss_img = boss_img.resize((boss_w, boss_h), Image.Resampling.NEAREST)
         bg.paste(boss_img, (boss_x, boss_y), boss_img)
     except FileNotFoundError:
-        boss_w, boss_h = 200, 200
-        boss_x = 40
+        boss_w, boss_h = boss_cfg["default_width"], boss_cfg["default_height"]
         draw.rectangle([boss_x, boss_y, boss_x + boss_w, boss_y + boss_h], fill=(200, 50, 50, 255))
     
-    # Индикатор ярости/подготовки атаки босса (выровнен по boss_x)
+    # Расчет зарядки у босса
     alive_count = len([p for p in session.players.values() if p["is_alive"]])
     if alive_count >= 5: current_max_cd = 3
     elif alive_count >= 3: current_max_cd = 2
@@ -149,7 +140,7 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     draw.text((boss_x, boss_y - 60), f"{session.boss_name} (🛡️{int(session.boss_phys_def*100)}% 🔮{int(session.boss_mag_def*100)}%)", fill="white", font=font_name)
     draw.text((boss_x, boss_y - 45), cd_text, fill="orange" if boss_action_ready else "#87CEEB", font=font_name)
     
-    # Полоска ХП босса (подстраивается под его динамическую ширину boss_w)
+    # Полоска здоровья босса подстраивается под динамическую ширину boss_w
     draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20))
     hp_percent = session.boss_hp / session.boss_max_hp
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
@@ -159,7 +150,7 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         debuff_txt = "Эффекты: " + ", ".join([f"{d['type']}({d['duration']}т)" for d in session.boss_debuffs])
         draw.text((boss_x, boss_y - 5), debuff_txt, fill="#FF6347", font=font_hp)
 
-    # Отображение баффов команды
+    # Вывод баффов рейда
     buff_y = 20
     if session.atk_buff_turns > 0:
         draw.text((320, buff_y), f"⚔️ Атака: +{int(session.atk_buff_value*100)}% ({session.atk_buff_turns}х)", fill="#FFD700", font=font_name)
@@ -167,11 +158,11 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     if session.def_buff_turns > 0:
         draw.text((320, buff_y), f"🛡️ Щит: +{int(session.def_buff_value*100)}% ({session.def_buff_turns}х)", fill="#00FFFF", font=font_name)
 
-    # Отрисовка отряда участников (📏 ровно 10 пикселей чистого зазора по горизонтали) позиция
-    p_w, p_h = 75, 75       
-    start_x = 480           
-    spacing_x = 85
-    base_y = 235           
+    # Отрисовка отряда на основе параметров из внешнего JSON
+    p_w, p_h = party_cfg["sprite_width"], party_cfg["sprite_height"]
+    start_x = party_cfg["start_x"]
+    spacing_x = party_cfg["spacing_x"]
+    base_y = party_cfg["base_y"]
 
     for idx, p_id in enumerate(reversed(session.turn_order)):
         player = session.players[p_id]
@@ -182,11 +173,11 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         is_his_turn = (p_id == current_player_id)
         
         x = start_x + (real_idx * spacing_x)
-        y = base_y - (real_idx * 5)
+        y = base_y - (real_idx * party_cfg["perspective_step_y"])
 
         if is_his_turn:
-            x -= 30  
-            y += 15  
+            x -= party_cfg["attacker_advance_x"]
+            y += party_cfg["attacker_advance_y"]
             
         p_img = get_player_sprite(player['class'])
         
@@ -297,9 +288,9 @@ async def on_ready():
 @bot.command(name="старт")
 async def start_boss(ctx):
     """Команда для запуска пошагового боя с яростью босса и анти-абузом"""
-    global session, BOSSES_LIST, CLASS_SKILLS, battle_message
+    global session, BOSSES_LIST, CLASS_SKILLS, VIEW_CONFIG, battle_message
     
-    CLASS_SKILLS, BOSSES_LIST = load_game_data()
+    CLASS_SKILLS, BOSSES_LIST, VIEW_CONFIG = load_game_data()
     
     if session.state != "IDLE":
         await ctx.send("⚠️ Битва или сбор уже идут!")
@@ -529,7 +520,6 @@ async def start_boss(ctx):
             else:
                 boss_trigger = False
 
-        # Походивший отправляется в конец очереди
         session.turn_order.append(session.turn_order.pop(0))
         
         img_file = generate_battle_image(current_player_id=None, boss_action_ready=boss_trigger)
