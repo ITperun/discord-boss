@@ -11,7 +11,8 @@ import database
 from graphics import generate_battle_image, generate_profile_image, generate_endgame_image
 from effects import generate_status_text
 from combat import clean_dead_casters, execute_skill, process_global_tick, execute_boss_attack
-from ui import TurnButtons, TargetView, ProfileView, ShopView
+# 🔥 Добавляем импорт LeaderboardView
+from ui import TurnButtons, TargetView, ProfileView, ShopView, LeaderboardView
 
 load_dotenv()
 intents = discord.Intents.default()
@@ -20,22 +21,16 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 bot.remove_command('help')
 
-# Глобальная переменная для хранения ID канала
 ALLOWED_CHANNEL_ID = None
 
 @bot.event
 async def on_ready(): 
     print(f'✅ Бот {bot.user} запущен и модули загружены!')
 
-# 🔥 ПРОВЕРКА КАНАЛА ДЛЯ ВСЕХ КОМАНД
 @bot.check
 async def restrict_channel(ctx):
-    # Команду !канал можно использовать везде, чтобы иметь возможность перенастроить бота
-    if ctx.command and ctx.command.name == "канал":
-        return True
-    # Если канал установлен, и мы находимся не в нем — игнорируем команду (True - разрешить, False - заблокировать)
-    if ALLOWED_CHANNEL_ID is not None and ctx.channel.id != ALLOWED_CHANNEL_ID:
-        return False
+    if ctx.command and ctx.command.name == "канал": return True
+    if ALLOWED_CHANNEL_ID is not None and ctx.channel.id != ALLOWED_CHANNEL_ID: return False
     return True
 
 # === АДМИН-КОМАНДЫ ===
@@ -53,7 +48,6 @@ async def set_channel(ctx, channel: discord.TextChannel = None):
 @bot.command(name="выдать")
 @commands.has_permissions(administrator=True)
 async def give_item_or_gold(ctx, give_type: str, target: discord.Member, *, value: str):
-    # Инициализируем профиль игрока на случай, если он еще ни разу не играл
     database.get_player(target.id, target.display_name)
     
     if give_type.lower() == "золото":
@@ -70,7 +64,6 @@ async def give_item_or_gold(ctx, give_type: str, target: discord.Member, *, valu
         
         found_id = None
         for k, v in all_items.items():
-            # Проверяем совпадение как по ID (eng), так и по названию (рус)
             if k.lower() == value.lower() or v["name"].lower() == value.lower():
                 found_id = k
                 break
@@ -83,7 +76,6 @@ async def give_item_or_gold(ctx, give_type: str, target: discord.Member, *, valu
     else:
         await ctx.send("❌ Неизвестный тип. Используйте: `золото` или `предмет`.")
 
-# Обработка ошибок админ-команд (если использует обычный игрок)
 @set_channel.error
 @give_item_or_gold.error
 async def admin_error(ctx, error):
@@ -98,25 +90,76 @@ async def show_help(ctx):
     text = (
         "📜 **Список доступных команд:**\n\n"
         "⚔️ `!старт` — Начать битву со случайным боссом.\n"
-        "⚔️ `!старт [имя]` — Начать битву с конкретным боссом (например, `!старт некромант`).\n"
+        "⚔️ `!старт [имя]` — Начать битву с конкретным боссом.\n"
         "🛡️ `!присоединиться [класс]` / `!join` — Вступить в отряд. Классы: воин, маг, священник, бард, рейнджер, некромант.\n"
         "👤 `!профиль` — Показать свой профиль.\n"
         "🔍 `!профиль @пользователь` — Посмотреть профиль другого игрока.\n"
         "💰 `!кошелек` — Узнать количество золота.\n"
+        "🏆 `!рейтинг` / `!топ` — Топ-20 самых богатых игроков.\n"
         "🛒 `!магазин` / `!shop` — Открыть магазин снаряжения.\n"
         "⚖️ `!продать [название]` / `!sell` — Продать предмет из инвентаря за 50% стоимости.\n"
         "❓ `!помощь` / `!help` — Показать это сообщение.\n\n"
         "👑 **Админ-команды:**\n"
-        "• `!канал #канал` — Привязать бота к конкретному чату.\n"
+        "• `!канал #канал` — Привязать бота к чату.\n"
         "• `!выдать золото @игрок число` — Выдать золото.\n"
         "• `!выдать предмет @игрок название` — Выдать предмет.\n"
     )
     await ctx.send(text)
 
+# 🔥 НОВАЯ КОМАНДА РЕЙТИНГА
+@bot.command(name="рейтинг", aliases=["топ", "top"])
+async def show_leaderboard(ctx):
+    top_players = database.get_top_players(limit=20)
+    
+    if not top_players:
+        return await ctx.send("📜 Список авантюристов пока пуст.")
+        
+    view = LeaderboardView(top_players)
+    embed = view.generate_embed()
+    
+    # Отправляем с кнопками только если страниц больше одной
+    if view.max_pages > 1:
+        await ctx.send(embed=embed, view=view)
+    else:
+        await ctx.send(embed=embed)
+
 @bot.command(name="кошелек")
 async def check_wallet(ctx):
     player = database.get_player(ctx.author.id, ctx.author.display_name)
     await ctx.send(f"💰 {ctx.author.mention}, в твоем кошельке **{player['gold']} золота**.")
+
+@bot.command(name="продать", aliases=["sell"])
+async def sell_item(ctx, *, item_name: str):
+    config.reload_data()
+    player = database.get_player(ctx.author.id, ctx.author.display_name)
+    inv = player.get("inventory", [])
+    
+    if not inv: return await ctx.send("❌ Ваш инвентарь пуст.")
+        
+    all_items = {**config.ITEMS_DB.get("weapons", {}), **config.ITEMS_DB.get("armor", {}), **config.ITEMS_DB.get("accessories", {})}
+    
+    found_id = None
+    for i_id in inv:
+        item_data = all_items.get(i_id)
+        if item_data and item_data["name"].lower() == item_name.lower():
+            found_id = i_id
+            break
+            
+    if not found_id: return await ctx.send(f"❌ У вас в инвентаре нет предмета `{item_name}`.")
+        
+    item_data = all_items[found_id]
+    sell_price = item_data.get("price", 0) // 2
+    
+    if database.remove_item(ctx.author.id, found_id):
+        database.add_gold(ctx.author.id, sell_price)
+        await ctx.send(f"⚖️ Вы успешно продали **{item_data['name']}** за **{sell_price} золота**!")
+    else:
+        await ctx.send("❌ Произошла ошибка при продаже.")
+
+@sell_item.error
+async def sell_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ Укажите название предмета! Например: `!продать Ржавый меч`")
 
 @bot.command(name="профиль")
 async def show_profile(ctx, target: discord.Member = None):
@@ -139,44 +182,6 @@ async def show_profile(ctx, target: discord.Member = None):
         await ctx.send(file=file, view=view)
     else:
         await ctx.send(f"👤 Профиль игрока **{target_user.display_name}**:", file=file)
-
-@bot.command(name="продать", aliases=["sell"])
-async def sell_item(ctx, *, item_name: str):
-    config.reload_data()
-    player = database.get_player(ctx.author.id, ctx.author.display_name)
-    inv = player.get("inventory", [])
-    
-    if not inv:
-        return await ctx.send("❌ Ваш инвентарь пуст.")
-        
-    # Собираем все существующие в игре предметы
-    all_items = {**config.ITEMS_DB.get("weapons", {}), **config.ITEMS_DB.get("armor", {}), **config.ITEMS_DB.get("accessories", {})}
-    
-    found_id = None
-    # Ищем предмет в инвентаре игрока по названию (игнорируя регистр)
-    for i_id in inv:
-        item_data = all_items.get(i_id)
-        if item_data and item_data["name"].lower() == item_name.lower():
-            found_id = i_id
-            break
-            
-    if not found_id:
-        return await ctx.send(f"❌ У вас в инвентаре нет предмета `{item_name}`.")
-        
-    item_data = all_items[found_id]
-    sell_price = item_data.get("price", 0) // 2
-    
-    if database.remove_item(ctx.author.id, found_id):
-        database.add_gold(ctx.author.id, sell_price)
-        await ctx.send(f"⚖️ Вы успешно продали **{item_data['name']}** за **{sell_price} золота**!")
-    else:
-        await ctx.send("❌ Произошла ошибка при продаже.")
-
-# Обработчик ошибки, если игрок забыл написать название
-@sell_item.error
-async def sell_error(ctx, error):
-    if isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send("❌ Укажите название предмета! Например: `!продать Ржавый меч`")
 
 @bot.command(name="магазин", aliases=["shop"])
 async def show_shop(ctx):

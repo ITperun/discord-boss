@@ -28,7 +28,6 @@ def get_player(user_id, display_name="Unknown"):
         }
         save_db(db)
     else:
-        # Патч для старых профилей
         updated = False
         if "inventory" not in db[uid]:
             db[uid]["inventory"] = []
@@ -63,15 +62,12 @@ def add_item(user_id, item_id):
         db[uid]["inventory"].append(item_id)
         save_db(db)
 
-# 🔥 НОВАЯ ФУНКЦИЯ ДЛЯ ПРОДАЖИ (Удаление предмета)
 def remove_item(user_id, item_id):
     db = load_db()
     uid = str(user_id)
     if uid in db and item_id in db[uid]["inventory"]:
-        # Удаляем только одну копию предмета
         db[uid]["inventory"].remove(item_id)
         
-        # Если такого предмета больше не осталось в инвентаре, снимаем его с экипировки
         if item_id not in db[uid]["inventory"]:
             for slot, eq_id in db[uid]["equipment"].items():
                 if eq_id == item_id:
@@ -119,3 +115,17 @@ def get_total_stats(user_id):
                     total_stats[stat_name] += val
                     
     return total_stats
+
+def get_top_players(limit=20):
+    db = load_db()
+    players = []
+    for uid, p_data in db.items():
+        # Исключаем ботов-NPC
+        if str(uid).startswith("npc_"): continue
+        # 🔥 Исключаем тебя (создателя/админа) из рейтинга по ID
+        if str(uid) == "716643196645539891": continue
+        
+        players.append(p_data)
+        
+    players.sort(key=lambda x: x.get("gold", 0), reverse=True)
+    return players[:limit]

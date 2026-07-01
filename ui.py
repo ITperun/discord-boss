@@ -139,7 +139,6 @@ class ProfileView(discord.ui.View):
             return await interaction.response.send_message("❌ Это не ваш профиль!", ephemeral=True)
         await interaction.response.send_message("⚙️ Управление экипировкой:", view=EquipSlotView(self.user_id), ephemeral=True)
 
-
 # === ОБНОВЛЕННЫЙ МАГАЗИН (Сортировка, Страницы, Модальное окно) ===
 class PageModal(discord.ui.Modal, title="Переход на страницу"):
     page_num = discord.ui.TextInput(
@@ -184,7 +183,6 @@ class ShopSelect(discord.ui.Select):
         if not options:
             options.append(discord.SelectOption(label="Пусто", value="none"))
             
-        # Указываем row=2, чтобы селект был всегда под кнопками навигации
         super().__init__(placeholder="Выберите предмет для покупки...", options=options, row=2)
 
     async def callback(self, interaction: discord.Interaction):
@@ -203,7 +201,6 @@ class ShopSelect(discord.ui.Select):
             database.add_item(self.user_id, item_id)
             await interaction.response.send_message(f"🎉 Вы успешно купили **{item['name']}**! Предмет добавлен в инвентарь.", ephemeral=True)
             
-            # Обновляем кошелек в основном сообщении магазина
             if hasattr(self.view, "generate_embed"):
                 await interaction.message.edit(embed=self.view.generate_embed(), view=self.view)
         else:
@@ -220,7 +217,6 @@ class ShopView(discord.ui.View):
     def get_sorted_items(self):
         items_dict = config.ITEMS_DB.get(self.current_category, {})
         items_list = list(items_dict.items())
-        # Сортировка от дешевого к дорогому
         items_list.sort(key=lambda x: x[1].get("price", 999999))
         return items_list
 
@@ -232,7 +228,6 @@ class ShopView(discord.ui.View):
     def update_components(self):
         self.clear_items()
         
-        # ROW 0: Кнопки категорий
         btn_weap = discord.ui.Button(label="⚔️ Оружие", style=discord.ButtonStyle.primary if self.current_category == "weapons" else discord.ButtonStyle.secondary, row=0)
         btn_weap.callback = self.make_cat_callback("weapons")
         
@@ -246,13 +241,11 @@ class ShopView(discord.ui.View):
         self.add_item(btn_arm)
         self.add_item(btn_acc)
         
-        # Вычисляем количество страниц
         items_list = self.get_sorted_items()
         total_pages = max(1, (len(items_list) + 9) // 10)
         if self.current_page > total_pages: 
             self.current_page = total_pages
         
-        # ROW 1: Пагинация
         btn_prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.secondary, disabled=(self.current_page == 1), row=1)
         btn_prev.callback = self.page_prev
         
@@ -266,7 +259,6 @@ class ShopView(discord.ui.View):
         self.add_item(btn_page)
         self.add_item(btn_next)
         
-        # ROW 2: Выпадающее меню с предметами текущей страницы
         page_items = self.get_page_items()
         self.add_item(ShopSelect(self.user_id, page_items))
 
@@ -275,7 +267,7 @@ class ShopView(discord.ui.View):
             if str(interaction.user.id) != self.user_id:
                 return await interaction.response.send_message("❌ Не ваше меню!", ephemeral=True)
             self.current_category = category
-            self.current_page = 1 # Сбрасываем на первую страницу при смене категории
+            self.current_page = 1 
             self.update_components()
             embed = self.generate_embed()
             await interaction.response.edit_message(embed=embed, view=self)
@@ -296,7 +288,6 @@ class ShopView(discord.ui.View):
     async def page_input(self, interaction: discord.Interaction):
         if str(interaction.user.id) != self.user_id:
             return await interaction.response.send_message("❌ Не ваше меню!", ephemeral=True)
-        # Открываем модальное окно для ввода номера страницы
         await interaction.response.send_modal(PageModal(self))
 
     def generate_embed(self):
@@ -318,5 +309,58 @@ class ShopView(discord.ui.View):
                 
         player = database.get_player(self.user_id)
         embed.set_footer(text=f"Твой кошелек: {player.get('gold', 0)} золота")
+        
+        return embed
+
+# === ИНТЕРФЕЙС РЕЙТИНГА ИГРОКОВ ===
+class LeaderboardView(discord.ui.View):
+    def __init__(self, top_players):
+        super().__init__(timeout=120)
+        self.top_players = top_players
+        self.current_page = 1
+        # Рассчитываем точное количество страниц (каждая вмещает до 10 игроков)
+        self.max_pages = max(1, (len(top_players) + 9) // 10)
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        if self.max_pages > 1:
+            btn_prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.secondary, disabled=(self.current_page == 1))
+            btn_prev.callback = self.prev_page
+            
+            btn_next = discord.ui.Button(label="▶", style=discord.ButtonStyle.secondary, disabled=(self.current_page == self.max_pages))
+            btn_next.callback = self.next_page
+            
+            self.add_item(btn_prev)
+            self.add_item(btn_next)
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.current_page -= 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.current_page += 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
+
+    def generate_embed(self):
+        embed = discord.Embed(title="🏆 Топ богатейших авантюристов", color=discord.Color.gold())
+        
+        start_idx = (self.current_page - 1) * 10
+        end_idx = start_idx + 10
+        page_players = self.top_players[start_idx:end_idx]
+
+        desc = ""
+        for i, p in enumerate(page_players):
+            rank = start_idx + i + 1
+            medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "🏅"
+            desc += f"**{rank}.** {medal} **{p.get('name', 'Неизвестный')}** — 💰 {p.get('gold', 0)}\n"
+
+        if not desc:
+            desc = "Пока ни один авантюрист не накопил богатств."
+
+        embed.description = desc
+        embed.set_footer(text=f"Страница {self.current_page} из {self.max_pages}")
         
         return embed
