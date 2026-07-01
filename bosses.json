@@ -14,7 +14,7 @@
       "target": "aoe",
       "min_damage": 75,
       "max_damage": 85,
-      "effect": {"type": "ослабление", "duration": 7, "value": 0.30}
+      "effect": {"type": "ослабление", "duration": 7, "value": 0.40}
     }
   },
   {

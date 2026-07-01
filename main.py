@@ -8,10 +8,11 @@ from dotenv import load_dotenv
 import config
 from game_state import session
 import database
-from graphics import generate_battle_image, generate_profile_image
+# 🔥 Импортируем новую функцию экрана конца игры
+from graphics import generate_battle_image, generate_profile_image, generate_endgame_image
 from effects import generate_status_text
 from combat import clean_dead_casters, execute_skill, process_global_tick, execute_boss_attack
-from ui import TurnButtons, TargetView
+from ui import TurnButtons, TargetView, ProfileView, ShopView
 
 load_dotenv()
 intents = discord.Intents.default()
@@ -27,11 +28,8 @@ async def check_wallet(ctx):
     player = database.get_player(ctx.author.id, ctx.author.display_name)
     await ctx.send(f"💰 {ctx.author.mention}, в твоем кошельке **{player['gold']} золота**.")
 
-from ui import TurnButtons, TargetView, ProfileView, ShopView # Не забудь добавить импорты!
-
 @bot.command(name="профиль")
 async def show_profile(ctx):
-    # Обновляем профиль (чтобы подтянулись пустые слоты инвентаря, если их не было)
     player_data = database.get_player(ctx.author.id, ctx.author.display_name)
     stats = database.get_total_stats(ctx.author.id)
     
@@ -42,8 +40,6 @@ async def show_profile(ctx):
         print(f"Не удалось загрузить аватар: {e}")
         
     file = generate_profile_image(player_data, stats, avatar_bytes)
-    
-    # 🔥 Добавляем кнопки инвентаря к сообщению профиля
     view = ProfileView(ctx.author.id)
     await ctx.send(file=file, view=view)
 
@@ -55,16 +51,11 @@ async def show_shop(ctx):
 
 @bot.command(name="старт")
 async def start_boss(ctx, *, requested_boss: str = None):
-    """
-    Команда !старт начинает бой.
-    Можно написать !старт орк, !старт дракон и т.д.
-    """
     config.reload_data()
     
     if session.state != "IDLE": 
         return await ctx.send("⚠️ Битва уже идет!")
 
-    # Логика выбора конкретного босса
     if requested_boss:
         found_bosses = [b for b in config.BOSSES_LIST if requested_boss.lower() in b["name"].lower()]
         if not found_bosses:
@@ -177,6 +168,7 @@ async def start_boss(ctx, *, requested_boss: str = None):
             delay = max(5.0, min(14.0, 4.0 + (lines_count * 0.4)))
             await asyncio.sleep(delay)
 
+    # 🔥 ЗАМЕНЯЕМ КАРТИНКУ НА ЭКРАН ПОБЕДЫ ИЛИ ПОРАЖЕНИЯ
     if session.boss_hp <= 0: 
         reward_text = ""
         for p in session.players.values():
@@ -188,9 +180,9 @@ async def start_boss(ctx, *, requested_boss: str = None):
         if reward_text:
             victory_msg += f"💰 Отряд получает награду по **{session.boss_reward} золота**: {reward_text}"
             
-        await battle_msg.edit(content=victory_msg, attachments=[generate_battle_image()], view=None)
+        await battle_msg.edit(content=victory_msg, attachments=[generate_endgame_image(is_victory=True)], view=None)
     else: 
-        await battle_msg.edit(content=f"💀 **ПОРАЖЕНИЕ...** Отряд уничтожен.", attachments=[generate_battle_image()], view=None)
+        await battle_msg.edit(content=f"💀 **ПОРАЖЕНИЕ...** Отряд уничтожен.", attachments=[generate_endgame_image(is_victory=False)], view=None)
         
     session.state = "IDLE"
 

@@ -2,7 +2,7 @@ import os
 import io
 import discord
 from PIL import Image, ImageDraw, ImageFont
-from pilmoji import Pilmoji  # <--- Новый импорт для эмодзи
+from pilmoji import Pilmoji
 import config
 from game_state import session
 
@@ -20,6 +20,8 @@ def get_player_sprite(class_name):
 def generate_battle_image(current_player_id=None, boss_action_ready=False):
     boss_cfg = config.VIEW_CONFIG["boss_display"]
     party_cfg = config.VIEW_CONFIG["party_display"]
+    canvas_cfg = config.VIEW_CONFIG.get("canvas", {"width": 1200, "height": 400})
+    c_w, c_h = canvas_cfg["width"], canvas_cfg["height"]
 
     bg_map = {
         "Орк-Разрушитель": "assets/background-orc.png",
@@ -34,13 +36,13 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         try:
             bg = Image.open("assets/background.png").convert("RGBA")
         except FileNotFoundError:
-            bg = Image.new("RGBA", (1200, 400), (40, 40, 40, 255))
+            bg = Image.new("RGBA", (c_w, c_h), (40, 40, 40, 255))
         
     draw = ImageDraw.Draw(bg)
     
     try:
-        font_name = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
-        font_hp = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 10)
+        font_name = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        font_hp = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
     except IOError:
         font_name = ImageFont.load_default()
         font_hp = ImageFont.load_default()
@@ -66,17 +68,15 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     alive_count = len([p for p in session.players.values() if p["is_alive"]])
     max_cd = 3 if alive_count >= 5 else 2 if alive_count >= 3 else 1
     
-    # Полоска ХП босса
     draw.rectangle([boss_x, boss_y - 20, boss_x + boss_w, boss_y - 10], fill=(60, 20, 20))
     hp_percent = session.boss_hp / session.boss_max_hp
     draw.rectangle([boss_x, boss_y - 20, boss_x + int(boss_w * hp_percent), boss_y - 10], fill=(220, 40, 40))
     
-    # 🔥 ИСПОЛЬЗУЕМ PILMOJI ДЛЯ ОТРИСОВКИ ТЕКСТА С ЭМОДЗИ НА ПОЛЕ БОЯ
     with Pilmoji(bg) as pilmoji:
-        pilmoji.text((boss_x, boss_y - 60), f"👹 {session.boss_name} (🛡️ Защита: {int(total_def*100)}%)", fill="white", font=font_name)
+        pilmoji.text((boss_x, boss_y - 65), f"👹 {session.boss_name} (🛡️ Защита: {int(total_def*100)}%)", fill="white", font=font_name)
         cd_text = "⚠️ ПОДГОТОВКА УДАРА!" if boss_action_ready else f"⏳ Очередь атаки: {session.boss_cooldown_counter}/{max_cd}"
         pilmoji.text((boss_x, boss_y - 45), cd_text, fill="orange" if boss_action_ready else "#87CEEB", font=font_name)
-        pilmoji.text((boss_x + 5, boss_y - 21), f"{session.boss_hp} / {session.boss_max_hp} HP", fill="white", font=font_hp)
+        pilmoji.text((boss_x + 5, boss_y - 22), f"{session.boss_hp} / {session.boss_max_hp} HP", fill="white", font=font_hp)
 
     p_w, p_h = party_cfg["sprite_width"], party_cfg["sprite_height"]
     start_x, spacing_x, base_y = party_cfg["start_x"], party_cfg["spacing_x"], party_cfg["base_y"]
@@ -104,19 +104,18 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         name_color = "#FFD700" if p_id == current_player_id else "white"
         p_name = player["name"][:10] + (" [С]" if player.get("strafe_turns", 0) > 0 else "")
         
-        # Полоска ХП игроков
-        draw.rectangle([x, y - 15, x + p_w, y - 8], fill=(60, 20, 20))
+        draw.rectangle([x, y - 20, x + p_w, y - 12], fill=(60, 20, 20))
         p_hp_percent = player["hp"] / player["max_hp"]
-        draw.rectangle([x, y - 15, x + int(p_w * p_hp_percent), y - 8], fill=(40, 220, 40))
+        draw.rectangle([x, y - 20, x + int(p_w * p_hp_percent), y - 12], fill=(40, 220, 40))
         
-        # Текст имени игрока с эмодзи
         with Pilmoji(bg) as pilmoji:
-            pilmoji.text((x, y - 35), p_name, fill=name_color, font=font_name)
+            pilmoji.text((x, y - 45), p_name, fill=name_color, font=font_name)
 
     img_byte_arr = io.BytesIO()
     bg.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
     return discord.File(fp=img_byte_arr, filename="battle.png")
+
 
 def generate_profile_image(player_data, total_stats, avatar_bytes=None):
     bg = Image.new("RGBA", (600, 300), (30, 30, 35, 255))
@@ -128,7 +127,6 @@ def generate_profile_image(player_data, total_stats, avatar_bytes=None):
     except:
         font_title = font_text = ImageFont.load_default()
 
-    # Отрисовка аватара
     if avatar_bytes:
         try:
             avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
@@ -150,7 +148,6 @@ def generate_profile_image(player_data, total_stats, avatar_bytes=None):
     ac2_name = all_items[eq["acc2"]]["name"] if eq["acc2"] in all_items else "Пусто"
     max_hp = total_stats["VIT"] * 10
 
-    # 🔥 ИСПОЛЬЗУЕМ PILMOJI ДЛЯ ТЕКСТА ПРОФИЛЯ
     with Pilmoji(bg) as pilmoji:
         pilmoji.text((20, 185), f"👤 {player_data['name']}", fill="#FFD700", font=font_title)
         pilmoji.text((20, 225), f"💰 Золото: {player_data['gold']}", fill="yellow", font=font_text)
@@ -162,7 +159,7 @@ def generate_profile_image(player_data, total_stats, avatar_bytes=None):
         pilmoji.text((210, y_eq), f"💍 Аксесс 1: {ac1_name}", fill="white", font=font_text); y_eq+=35
         pilmoji.text((210, y_eq), f"💍 Аксесс 2: {ac2_name}", fill="white", font=font_text)
 
-        pilmoji.text((450, 20), "АТРИБУТЫ", fill="#FF6347", font=font_title)
+        pilmoji.text((450, 20), "СТАТУСЫ", fill="#FF6347", font=font_title)
         y = 60
         pilmoji.text((450, y), f"❤️ HP: {max_hp}", fill="#32CD32", font=font_text); y+=30
         pilmoji.text((450, y), f"💪 STR: {total_stats['STR']}", fill="white", font=font_text); y+=30
@@ -176,3 +173,57 @@ def generate_profile_image(player_data, total_stats, avatar_bytes=None):
     bg.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
     return discord.File(fp=img_byte_arr, filename="profile.png")
+
+# 🔥 НОВАЯ ФУНКЦИЯ: ЭКРАН ПОБЕДЫ/ПОРАЖЕНИЯ
+def generate_endgame_image(is_victory):
+    canvas_cfg = config.VIEW_CONFIG.get("canvas", {"width": 1200, "height": 400})
+    c_w, c_h = canvas_cfg["width"], canvas_cfg["height"]
+
+    bg_map = {
+        "Орк-Разрушитель": "assets/background-orc.png",
+        "Древний Дракон": "assets/background-dragon.png",
+        "Проклятый Некромант": "assets/background-necro.png"
+    }
+    bg_path = bg_map.get(session.boss_name, "assets/background.png")
+
+    try:
+        bg = Image.open(bg_path).convert("RGBA")
+    except FileNotFoundError:
+        try:
+            bg = Image.open("assets/background.png").convert("RGBA")
+        except FileNotFoundError:
+            bg = Image.new("RGBA", (c_w, c_h), (40, 40, 40, 255))
+
+    # Накладываем темный полупрозрачный слой
+    overlay = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 180))
+    bg.paste(overlay, (0, 0), overlay)
+
+    draw = ImageDraw.Draw(bg)
+    try:
+        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+    except IOError:
+        font_large = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+
+    with Pilmoji(bg) as pilmoji:
+        if is_victory:
+            text = "🏆 ПОБЕДА! 🏆"
+            color = "#FFD700"
+            subtext = f"{session.boss_name} повержен"
+        else:
+            text = "💀 ПОРАЖЕНИЕ 💀"
+            color = "#FF4500"
+            subtext = "Отряд был уничтожен"
+
+        # Центрируем текст
+        _, _, w, h = draw.textbbox((0, 0), text, font=font_large)
+        pilmoji.text(((c_w - w) // 2, (c_h - h) // 2 - 40), text, fill=color, font=font_large)
+
+        _, _, sw, sh = draw.textbbox((0, 0), subtext, font=font_small)
+        pilmoji.text(((c_w - sw) // 2, (c_h - sh) // 2 + 50), subtext, fill="white", font=font_small)
+
+    img_byte_arr = io.BytesIO()
+    bg.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    return discord.File(fp=img_byte_arr, filename="endgame.png")
