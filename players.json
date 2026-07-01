@@ -1,7 +1,7 @@
 {
     "716643196645539891": {
-        "name": "Weird Little Runalimo",
-        "gold": 900,
+        "name": "Kumihorane",
+        "gold": 70000,
         "inventory": [
             "rusty_sword",
             "leather_tunic",
@@ -19,6 +19,17 @@
             "armor": "dragon_scale",
             "acc1": "lucky_ring",
             "acc2": "lucky_ring"
+        }
+    },
+    "1362100545539674142": {
+        "name": "Следователь",
+        "gold": 0,
+        "inventory": [],
+        "equipment": {
+            "weapon": null,
+            "armor": null,
+            "acc1": null,
+            "acc2": null
         }
     }
 }

@@ -1,15 +1,24 @@
 {
   "weapons": {
+    "wooden_club": {"name": "Деревянная дубина", "price": 50, "rarity": "common", "stats": {"STR": 3, "VIT": 2}},
     "rusty_sword": {"name": "Ржавый меч", "price": 100, "rarity": "common", "stats": {"STR": 5}},
-    "dragon_slayer": {"name": "Убийца Драконов", "price": 1500, "rarity": "epic", "stats": {"STR": 25, "LUK": 5}},
+    "novice_dagger": {"name": "Кинжал новичка", "price": 120, "rarity": "common", "stats": {"AGI": 5, "LUK": 2}},
     "apprentice_staff": {"name": "Посох ученика", "price": 100, "rarity": "common", "stats": {"INT": 5}},
-    "necro_skull": {"name": "Череп Лича", "price": 1200, "rarity": "epic", "stats": {"INT": 20, "VIT": 5}}
+    "hunter_bow": {"name": "Охотничий лук", "price": 250, "rarity": "uncommon", "stats": {"AGI": 8, "DEX": 3}},
+    "necro_skull": {"name": "Череп Лича", "price": 1200, "rarity": "epic", "stats": {"INT": 20, "VIT": 5}},
+    "dragon_slayer": {"name": "Убийца Драконов", "price": 1500, "rarity": "epic", "stats": {"STR": 25, "LUK": 5}}
   },
   "armor": {
-    "leather_tunic": {"name": "Кожаная туника", "price": 150, "rarity": "common", "stats": {"VIT": 2, "DEX": 2}},
-    "dragon_scale": {"name": "Драконья Чешуя", "price": 2000, "rarity": "epic", "stats": {"VIT": 10, "STR": 5, "INT": 5}}
+    "cloth_robe": {"name": "Тряпичная одежда", "price": 40, "rarity": "common", "stats": {"VIT": 2, "DEX": 1}},
+    "leather_tunic": {"name": "Кожаная туника", "price": 150, "rarity": "common", "stats": {"VIT": 4, "DEX": 2}},
+    "wooden_shield": {"name": "Деревянный щит", "price": 200, "rarity": "common", "stats": {"VIT": 5, "STR": 2}},
+    "chainmail": {"name": "Кольчуга стражника", "price": 500, "rarity": "uncommon", "stats": {"VIT": 8, "AGI": -1}},
+    "dragon_scale": {"name": "Драконья Чешуя", "price": 2000, "rarity": "epic", "stats": {"VIT": 15, "STR": 5, "INT": 5}}
   },
   "accessories": {
+    "copper_ring": {"name": "Медное кольцо", "price": 80, "rarity": "common", "stats": {"LUK": 2}},
+    "health_amulet": {"name": "Амулет здоровья", "price": 120, "rarity": "common", "stats": {"VIT": 3}},
+    "bard_charm": {"name": "Кулон Музыканта", "price": 300, "rarity": "uncommon", "stats": {"CHA": 5, "INT": 2}},
     "lucky_ring": {"name": "Кольцо Удачи", "price": 800, "rarity": "rare", "stats": {"LUK": 10}},
     "thief_cloak": {"name": "Плащ Вора", "price": 800, "rarity": "rare", "stats": {"DEX": 10}}
   }

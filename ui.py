@@ -139,37 +139,184 @@ class ProfileView(discord.ui.View):
             return await interaction.response.send_message("❌ Это не ваш профиль!", ephemeral=True)
         await interaction.response.send_message("⚙️ Управление экипировкой:", view=EquipSlotView(self.user_id), ephemeral=True)
 
-# === ИНТЕРФЕЙС МАГАЗИНА ===
-class ShopSelect(discord.ui.Select):
-    def __init__(self, user_id):
-        self.user_id = str(user_id)
-        options = []
-        self.all_items = {**config.ITEMS_DB.get("weapons", {}), **config.ITEMS_DB.get("armor", {}), **config.ITEMS_DB.get("accessories", {})}
-        
-        for i_id, item in self.all_items.items():
-            price = item.get("price", 99999)
-            stats_str = ", ".join([f"{k}+{v}" for k,v in item.get("stats", {}).items()])
-            desc = f"💰 {price} | {stats_str}"
-            options.append(discord.SelectOption(label=item["name"], description=desc, value=i_id))
-            if len(options) >= 25: break 
+
+# === ОБНОВЛЕННЫЙ МАГАЗИН (Сортировка, Страницы, Модальное окно) ===
+class PageModal(discord.ui.Modal, title="Переход на страницу"):
+    page_num = discord.ui.TextInput(
+        label="Введите номер страницы",
+        style=discord.TextStyle.short,
+        placeholder="Например: 2",
+        required=True,
+        max_length=3
+    )
+
+    def __init__(self, shop_view):
+        super().__init__()
+        self.shop_view = shop_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            page = int(self.page_num.value)
+            items_list = self.shop_view.get_sorted_items()
+            total_pages = max(1, (len(items_list) + 9) // 10)
             
-        super().__init__(placeholder="Выберите предмет для покупки...", options=options)
+            if page < 1 or page > total_pages:
+                return await interaction.response.send_message(f"❌ Страница должна быть от 1 до {total_pages}.", ephemeral=True)
+                
+            self.shop_view.current_page = page
+            self.shop_view.update_components()
+            await interaction.response.edit_message(embed=self.shop_view.generate_embed(), view=self.shop_view)
+        except ValueError:
+            await interaction.response.send_message("❌ Введите корректное число.", ephemeral=True)
+
+class ShopSelect(discord.ui.Select):
+    def __init__(self, user_id, page_items):
+        self.user_id = str(user_id)
+        self.page_items = page_items
+        options = []
+        
+        for i_id, item in self.page_items:
+            price = item.get("price", 99999)
+            stats_str = ", ".join([f"{k} {v if v<0 else '+'+str(v)}" for k,v in item.get("stats", {}).items()])
+            desc = f"💰 {price} | {stats_str}"[:100]
+            options.append(discord.SelectOption(label=item["name"][:25], description=desc, value=i_id))
+            
+        if not options:
+            options.append(discord.SelectOption(label="Пусто", value="none"))
+            
+        # Указываем row=2, чтобы селект был всегда под кнопками навигации
+        super().__init__(placeholder="Выберите предмет для покупки...", options=options, row=2)
 
     async def callback(self, interaction: discord.Interaction):
         if str(interaction.user.id) != self.user_id:
             return await interaction.response.send_message("❌ Вы не можете использовать это меню!", ephemeral=True)
         
         item_id = self.values[0]
-        item = self.all_items[item_id]
+        if item_id == "none":
+            return await interaction.response.send_message("Здесь пока нет товаров.", ephemeral=True)
+            
+        item_dict = dict(self.page_items)
+        item = item_dict[item_id]
         price = item.get("price", 99999)
         
         if database.spend_gold(self.user_id, price):
             database.add_item(self.user_id, item_id)
             await interaction.response.send_message(f"🎉 Вы успешно купили **{item['name']}**! Предмет добавлен в инвентарь.", ephemeral=True)
+            
+            # Обновляем кошелек в основном сообщении магазина
+            if hasattr(self.view, "generate_embed"):
+                await interaction.message.edit(embed=self.view.generate_embed(), view=self.view)
         else:
             await interaction.response.send_message(f"❌ Недостаточно золота. Нужно: {price} 💰", ephemeral=True)
 
 class ShopView(discord.ui.View):
     def __init__(self, user_id):
         super().__init__(timeout=120)
-        self.add_item(ShopSelect(user_id))
+        self.user_id = str(user_id)
+        self.current_category = "weapons"
+        self.current_page = 1
+        self.update_components()
+
+    def get_sorted_items(self):
+        items_dict = config.ITEMS_DB.get(self.current_category, {})
+        items_list = list(items_dict.items())
+        # Сортировка от дешевого к дорогому
+        items_list.sort(key=lambda x: x[1].get("price", 999999))
+        return items_list
+
+    def get_page_items(self):
+        items_list = self.get_sorted_items()
+        start = (self.current_page - 1) * 10
+        return items_list[start:start+10]
+
+    def update_components(self):
+        self.clear_items()
+        
+        # ROW 0: Кнопки категорий
+        btn_weap = discord.ui.Button(label="⚔️ Оружие", style=discord.ButtonStyle.primary if self.current_category == "weapons" else discord.ButtonStyle.secondary, row=0)
+        btn_weap.callback = self.make_cat_callback("weapons")
+        
+        btn_arm = discord.ui.Button(label="🛡️ Броня", style=discord.ButtonStyle.primary if self.current_category == "armor" else discord.ButtonStyle.secondary, row=0)
+        btn_arm.callback = self.make_cat_callback("armor")
+        
+        btn_acc = discord.ui.Button(label="💍 Аксессуары", style=discord.ButtonStyle.primary if self.current_category == "accessories" else discord.ButtonStyle.secondary, row=0)
+        btn_acc.callback = self.make_cat_callback("accessories")
+        
+        self.add_item(btn_weap)
+        self.add_item(btn_arm)
+        self.add_item(btn_acc)
+        
+        # Вычисляем количество страниц
+        items_list = self.get_sorted_items()
+        total_pages = max(1, (len(items_list) + 9) // 10)
+        if self.current_page > total_pages: 
+            self.current_page = total_pages
+        
+        # ROW 1: Пагинация
+        btn_prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.secondary, disabled=(self.current_page == 1), row=1)
+        btn_prev.callback = self.page_prev
+        
+        btn_page = discord.ui.Button(label=f"Стр. {self.current_page}/{total_pages} (Ввод)", style=discord.ButtonStyle.secondary, row=1)
+        btn_page.callback = self.page_input
+        
+        btn_next = discord.ui.Button(label="▶", style=discord.ButtonStyle.secondary, disabled=(self.current_page == total_pages), row=1)
+        btn_next.callback = self.page_next
+        
+        self.add_item(btn_prev)
+        self.add_item(btn_page)
+        self.add_item(btn_next)
+        
+        # ROW 2: Выпадающее меню с предметами текущей страницы
+        page_items = self.get_page_items()
+        self.add_item(ShopSelect(self.user_id, page_items))
+
+    def make_cat_callback(self, category):
+        async def callback(interaction: discord.Interaction):
+            if str(interaction.user.id) != self.user_id:
+                return await interaction.response.send_message("❌ Не ваше меню!", ephemeral=True)
+            self.current_category = category
+            self.current_page = 1 # Сбрасываем на первую страницу при смене категории
+            self.update_components()
+            embed = self.generate_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        return callback
+
+    async def page_prev(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.user_id: return
+        self.current_page -= 1
+        self.update_components()
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
+
+    async def page_next(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.user_id: return
+        self.current_page += 1
+        self.update_components()
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
+
+    async def page_input(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.user_id:
+            return await interaction.response.send_message("❌ Не ваше меню!", ephemeral=True)
+        # Открываем модальное окно для ввода номера страницы
+        await interaction.response.send_modal(PageModal(self))
+
+    def generate_embed(self):
+        cat_name = {"weapons": "⚔️ Оружие", "armor": "🛡️ Броня", "accessories": "💍 Аксессуары"}.get(self.current_category, "Предметы")
+        
+        items_list = self.get_sorted_items()
+        total_pages = max(1, (len(items_list) + 9) // 10)
+        page_items = self.get_page_items()
+        
+        embed = discord.Embed(title="🛒 Магазин Снаряжения", color=discord.Color.gold())
+        embed.description = f"**Категория:** {cat_name}\n**Страница {self.current_page} из {total_pages}**\n\n"
+        
+        if not page_items:
+            embed.description += "*Здесь пока нет товаров.*"
+        else:
+            for i_id, item in page_items:
+                stats = ", ".join([f"**{k}**: {v if v<0 else '+'+str(v)}" for k, v in item.get("stats", {}).items()])
+                embed.description += f"**{item['name']}** — 💰 {item.get('price', 9999)}\n└ Статы: {stats}\n\n"
+                
+        player = database.get_player(self.user_id)
+        embed.set_footer(text=f"Твой кошелек: {player.get('gold', 0)} золота")
+        
+        return embed

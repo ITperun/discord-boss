@@ -18,9 +18,27 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Удаляем стандартную команду help, чтобы сделать свою
+bot.remove_command('help')
+
 @bot.event
 async def on_ready(): 
     print(f'✅ Бот {bot.user} запущен и модули загружены!')
+
+@bot.command(name="помощь", aliases=["help"])
+async def show_help(ctx):
+    text = (
+        "📜 **Список доступных команд:**\n\n"
+        "⚔️ `!старт` — Начать битву со случайным боссом.\n"
+        "⚔️ `!старт [имя]` — Начать битву с конкретным боссом (например, `!старт некромант`).\n"
+        "🛡️ `!присоединиться [класс]` / `!join` — Вступить в отряд. Классы: воин, маг, священник, бард, рейнджер, некромант.\n"
+        "👤 `!профиль` — Показать свой профиль (с инвентарем и экипировкой).\n"
+        "🔍 `!профиль @пользователь` — Посмотреть профиль другого игрока.\n"
+        "💰 `!кошелек` — Узнать количество золота.\n"
+        "🛒 `!магазин` / `!shop` — Открыть магазин снаряжения.\n"
+        "❓ `!помощь` / `!help` — Показать это сообщение."
+    )
+    await ctx.send(text)
 
 @bot.command(name="кошелек")
 async def check_wallet(ctx):
@@ -28,25 +46,33 @@ async def check_wallet(ctx):
     await ctx.send(f"💰 {ctx.author.mention}, в твоем кошельке **{player['gold']} золота**.")
 
 @bot.command(name="профиль")
-async def show_profile(ctx):
-    player_data = database.get_player(ctx.author.id, ctx.author.display_name)
-    stats = database.get_total_stats(ctx.author.id)
+async def show_profile(ctx, target: discord.Member = None):
+    target_user = target if target else ctx.author
+    is_own = (target_user == ctx.author)
+    
+    player_data = database.get_player(target_user.id, target_user.display_name)
+    stats = database.get_total_stats(target_user.id)
     
     avatar_bytes = None
     try:
-        avatar_bytes = await ctx.author.display_avatar.replace(size=256, format="png").read()
+        avatar_bytes = await target_user.display_avatar.replace(size=256, format="png").read()
     except Exception:
         pass
         
     file = generate_profile_image(player_data, stats, avatar_bytes)
-    view = ProfileView(ctx.author.id)
-    await ctx.send(file=file, view=view)
+    
+    if is_own:
+        view = ProfileView(ctx.author.id)
+        await ctx.send(file=file, view=view)
+    else:
+        await ctx.send(f"👤 Профиль игрока **{target_user.display_name}**:", file=file)
 
 @bot.command(name="магазин", aliases=["shop"])
 async def show_shop(ctx):
     config.reload_data()
     view = ShopView(ctx.author.id)
-    await ctx.send("🛒 **Добро пожаловать в Магазин!**\nПотратьте заработанное с боссов золото с умом:", view=view)
+    embed = view.generate_embed()
+    await ctx.send(embed=embed, view=view)
 
 @bot.command(name="старт")
 async def start_boss(ctx, *, requested_boss: str = None):
@@ -101,7 +127,6 @@ async def start_boss(ctx, *, requested_boss: str = None):
         p_id = session.turn_order[0]
         player = session.players[p_id]
         
-        # 🔥 ПРОПУСК ХОДА СКЕЛЕТОМ: Мгновенно перекидываем в конец очереди
         if not player["is_alive"]:
             popped = session.turn_order.pop(0)
             if player.get("is_skeleton"):
@@ -142,7 +167,6 @@ async def start_boss(ctx, *, requested_boss: str = None):
         if not is_ode and session.boss_hp > 0:
             tick_text, boss_trigger = process_global_tick(p_id)
 
-        # 🔥 ОБЫЧНЫЙ СДВИГ ОЧЕРЕДИ: Убираем текущего игрока или его свежий скелет в конец
         if session.turn_order and session.turn_order[0] == p_id:
             popped = session.turn_order.pop(0)
             if player["is_alive"] or player.get("is_skeleton"): 
