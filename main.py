@@ -27,8 +27,11 @@ async def check_wallet(ctx):
     player = database.get_player(ctx.author.id, ctx.author.display_name)
     await ctx.send(f"💰 {ctx.author.mention}, в твоем кошельке **{player['gold']} золота**.")
 
+from ui import TurnButtons, TargetView, ProfileView, ShopView # Не забудь добавить импорты!
+
 @bot.command(name="профиль")
 async def show_profile(ctx):
+    # Обновляем профиль (чтобы подтянулись пустые слоты инвентаря, если их не было)
     player_data = database.get_player(ctx.author.id, ctx.author.display_name)
     stats = database.get_total_stats(ctx.author.id)
     
@@ -39,7 +42,16 @@ async def show_profile(ctx):
         print(f"Не удалось загрузить аватар: {e}")
         
     file = generate_profile_image(player_data, stats, avatar_bytes)
-    await ctx.send(file=file)
+    
+    # 🔥 Добавляем кнопки инвентаря к сообщению профиля
+    view = ProfileView(ctx.author.id)
+    await ctx.send(file=file, view=view)
+
+@bot.command(name="магазин", aliases=["shop"])
+async def show_shop(ctx):
+    config.reload_data()
+    view = ShopView(ctx.author.id)
+    await ctx.send("🛒 **Добро пожаловать в Магазин!**\nПотратьте заработанное с боссов золото с умом:", view=view)
 
 @bot.command(name="старт")
 async def start_boss(ctx, *, requested_boss: str = None):

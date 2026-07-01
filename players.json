@@ -1,11 +1,15 @@
 {
     "716643196645539891": {
         "name": "Weird Little Runalimo",
-        "gold": 750,
-        "inventory": [],
+        "gold": 400,
+        "inventory": [
+            "rusty_sword",
+            "leather_tunic",
+            "apprentice_staff"
+        ],
         "equipment": {
-            "weapon": null,
-            "armor": null,
+            "weapon": "rusty_sword",
+            "armor": "leather_tunic",
             "acc1": null,
             "acc2": null
         }

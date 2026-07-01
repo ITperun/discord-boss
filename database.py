@@ -4,7 +4,6 @@ import config
 
 DB_FILE = "players.json"
 
-# Базовые статы "голого" персонажа
 BASE_STATS = {"STR": 10, "AGI": 10, "INT": 10, "VIT": 10, "CHA": 10, "DEX": 0, "LUK": 0}
 
 def load_db():
@@ -28,6 +27,17 @@ def get_player(user_id, display_name="Unknown"):
             "equipment": {"weapon": None, "armor": None, "acc1": None, "acc2": None}
         }
         save_db(db)
+    else:
+        # Патч для старых профилей
+        updated = False
+        if "inventory" not in db[uid]:
+            db[uid]["inventory"] = []
+            updated = True
+        if "equipment" not in db[uid]:
+            db[uid]["equipment"] = {"weapon": None, "armor": None, "acc1": None, "acc2": None}
+            updated = True
+        if updated: save_db(db)
+            
     return db[uid]
 
 def add_gold(user_id, amount):
@@ -37,10 +47,40 @@ def add_gold(user_id, amount):
         db[uid]["gold"] += amount
         save_db(db)
 
-def get_total_stats(user_id):
-    """Считает сумму базовых статов + бонусы от всего надетого снаряжения"""
+def spend_gold(user_id, amount):
+    db = load_db()
     uid = str(user_id)
-    # Если это бот (NPC), даем ему базовые статы
+    if uid in db and db[uid]["gold"] >= amount:
+        db[uid]["gold"] -= amount
+        save_db(db)
+        return True
+    return False
+
+def add_item(user_id, item_id):
+    db = load_db()
+    uid = str(user_id)
+    if uid in db:
+        db[uid]["inventory"].append(item_id)
+        save_db(db)
+
+def equip_item(user_id, slot, item_id):
+    db = load_db()
+    uid = str(user_id)
+    if uid in db and item_id in db[uid]["inventory"]:
+        db[uid]["equipment"][slot] = item_id
+        save_db(db)
+        return True
+    return False
+
+def unequip_item(user_id, slot):
+    db = load_db()
+    uid = str(user_id)
+    if uid in db:
+        db[uid]["equipment"][slot] = None
+        save_db(db)
+
+def get_total_stats(user_id):
+    uid = str(user_id)
     if uid.startswith("npc_"): return BASE_STATS.copy()
     
     db = load_db()

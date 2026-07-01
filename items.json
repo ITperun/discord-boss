@@ -1,16 +1,16 @@
 {
   "weapons": {
-    "rusty_sword": {"name": "Ржавый меч", "rarity": "common", "stats": {"STR": 5}},
-    "dragon_slayer": {"name": "Убийца Драконов", "rarity": "epic", "stats": {"STR": 25, "LUK": 5}},
-    "apprentice_staff": {"name": "Посох ученика", "rarity": "common", "stats": {"INT": 5}},
-    "necro_skull": {"name": "Череп Лича", "rarity": "epic", "stats": {"INT": 20, "VIT": 5}}
+    "rusty_sword": {"name": "Ржавый меч", "price": 100, "rarity": "common", "stats": {"STR": 5}},
+    "dragon_slayer": {"name": "Убийца Драконов", "price": 1500, "rarity": "epic", "stats": {"STR": 25, "LUK": 5}},
+    "apprentice_staff": {"name": "Посох ученика", "price": 100, "rarity": "common", "stats": {"INT": 5}},
+    "necro_skull": {"name": "Череп Лича", "price": 1200, "rarity": "epic", "stats": {"INT": 20, "VIT": 5}}
   },
   "armor": {
-    "leather_tunic": {"name": "Кожаная туника", "rarity": "common", "stats": {"VIT": 2, "DEX": 2}},
-    "dragon_scale": {"name": "Драконья Чешуя", "rarity": "epic", "stats": {"VIT": 10, "STR": 5, "INT": 5}}
+    "leather_tunic": {"name": "Кожаная туника", "price": 150, "rarity": "common", "stats": {"VIT": 2, "DEX": 2}},
+    "dragon_scale": {"name": "Драконья Чешуя", "price": 2000, "rarity": "epic", "stats": {"VIT": 10, "STR": 5, "INT": 5}}
   },
   "accessories": {
-    "lucky_ring": {"name": "Кольцо Удачи", "rarity": "rare", "stats": {"LUK": 10}},
-    "thief_cloak": {"name": "Плащ Вора", "rarity": "rare", "stats": {"DEX": 10}}
+    "lucky_ring": {"name": "Кольцо Удачи", "price": 800, "rarity": "rare", "stats": {"LUK": 10}},
+    "thief_cloak": {"name": "Плащ Вора", "price": 800, "rarity": "rare", "stats": {"DEX": 10}}
   }
 }
