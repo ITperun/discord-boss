@@ -15,7 +15,6 @@ def clean_dead_casters():
     session.boss_debuffs["dots"] = [d for d in session.boss_debuffs["dots"] if d.get("caster_id") in alive_ids]
 
 def get_combat_stats(p_id, player):
-    """Получает статы из базы и применяет дебафф 'Ослабление'"""
     stats = database.get_total_stats(p_id)
     weakness = sum(d.get("value", 0.3) for d in player["debuffs"] if d["type"] == "ослабление")
     
@@ -33,7 +32,6 @@ def execute_skill(p_id, player, skill, target_id):
     action_text = f"\nИспользует **{skill['name']}**"
     is_ode = False
     
-    # ⚔️ ПОЛУЧАЕМ СТАТЫ С УЧЕТОМ ОСЛАБЛЕНИЯ (влияет на урон, хил и баффы)
     stats = get_combat_stats(p_id, player)
     
     base_dmg = 0
@@ -60,10 +58,7 @@ def execute_skill(p_id, player, skill, target_id):
     if base_dmg > 0:
         atk_mod = 1.0 + sum(b["value"] for b in session.party_buffs["atk"].values())
         atk_mod = max(0.1, atk_mod) 
-        
-        # 🔻 Механика уязвимости: если броня босса в минусе, урон увеличивается
         boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
-        
         dmg = max(1, int((base_dmg * atk_mod) * (1.0 - boss_def)))
         action_text += f" и наносит **{dmg}** урона!"
         if is_crit: action_text += " 💥 **КРИТИЧЕСКИЙ УДАР!**"
@@ -73,11 +68,14 @@ def execute_skill(p_id, player, skill, target_id):
         session.boss_debuffs["def_down"][p_id] = {"value": 0.30, "duration": 10}; action_text += " 📢 Босс спровоцирован!"
         if random.random() < 0.3:
             def_mod = 1.0
-            for b in session.party_buffs["def"].values():
-                def_mod *= (1.0 - b["value"])
+            for b in session.party_buffs["def"].values(): def_mod *= (1.0 - b["value"])
             c_dmg = max(1, int(random.randint(40,65) * def_mod))
             player["hp"] = max(0, player["hp"] - c_dmg); action_text += f"\n⚠️ Босс отвечает! Получено **{c_dmg}** урона!"
-            if player["hp"] <= 0: player["is_alive"] = False
+            if player["hp"] <= 0: 
+                player["is_alive"] = False
+                if session.boss_name == "Проклятый Некромант": player["is_skeleton"] = True
+                if not player.get("is_skeleton") and player["id"] in session.turn_order:
+                    session.turn_order.remove(player["id"])
             
     elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 12, "duration": 5, "caster_id": p_id}); action_text += " 🔥 Босс подожжен!"
     elif sid == "mage_ice" and random.random() < 0.9:
@@ -104,24 +102,18 @@ def execute_skill(p_id, player, skill, target_id):
         else:
             action_text += " 🎸 Но слушать оказалось некому!"
             
-    # 🔥 ОБНОВЛЕННАЯ ЛОГИКА ЖРЕЦА С ВЫВОДОМ ЧИСЕЛ
     elif sid == "priest_smite":
         heal_amt = 8 + int(stats["INT"] * 0.5)
         for p in session.players.values():
             if p["is_alive"]: p["hp"] = min(p["max_hp"], p["hp"] + heal_amt)
         action_text += f" ✨ Отряд исцелен на **{heal_amt}** HP!"
-        
     elif sid == "priest_great_heal" and target_id: 
         heal_amt = 40 + int(stats["INT"] * 2.0)
         target = session.players[target_id]
-        
-        # Считаем, сколько ХП реально было восстановлено, чтобы не писать лишнего, если цель почти фулловая
         actual_heal = min(target["max_hp"] - target["hp"], heal_amt)
         target["hp"] += actual_heal
-        
         mention = target['name'] if target.get('is_npc') else f"<@{target_id}>"
         action_text += f" 💖 На {mention} восстановлено **{actual_heal}** HP!"
-        
     elif sid == "priest_heal":
         heal_amt = 15 + int(stats["INT"] * 1.5)
         for p in session.players.values():
@@ -176,8 +168,10 @@ def process_global_tick(p_id):
             tick_text += f"\n☠️ {p['name']} получает **{p_dot}** урон от дебаффов."
             if p["hp"] <= 0:
                 p["is_alive"] = False
+                if session.boss_name == "Проклятый Некромант": p["is_skeleton"] = True
                 tick_text += f" 💀 Погиб!"
-                if p["id"] in session.turn_order and p["id"] != p_id: session.turn_order.remove(p["id"])
+                if not p.get("is_skeleton") and p["id"] in session.turn_order and p["id"] != p_id: 
+                    session.turn_order.remove(p["id"])
         for d in p["debuffs"]: d["duration"] -= 1
         p["debuffs"] = [d for d in p["debuffs"] if d["duration"] > 0]
         
@@ -185,11 +179,9 @@ def process_global_tick(p_id):
         if p["is_alive"] and p.get("strafe_turns", 0) > 0:
             stats = get_combat_stats(p["id"], p)
             boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
-            
             base_arr = 5 + int(stats["AGI"] * 0.5)
             dmg1 = max(1, int(random.randint(base_arr, base_arr+5) * (1.0 - boss_def)))
             dmg2 = max(1, int(random.randint(base_arr, base_arr+5) * (1.0 - boss_def)))
-            
             session.boss_hp = max(0, session.boss_hp - (dmg1 + dmg2))
             tick_text += f"\n🏹 Авто-Стрейф ({p['name']}) наносит **{dmg1}** и **{dmg2}** урона!"
             p["strafe_turns"] -= 1
@@ -205,17 +197,37 @@ def process_global_tick(p_id):
     return tick_text, boss_trigger
 
 def execute_boss_attack(alive_players):
+    skeletons = [p for p in session.players.values() if not p["is_alive"] and p.get("is_skeleton")]
+
     if session.boss_turns_taken >= 3 and session.boss_ultimate:
         boss_atk = session.boss_ultimate
         session.boss_turns_taken = 0
         is_ultimate = True
     else:
-        boss_atk = random.choice(session.boss_attacks)
+        valid_attacks = []
+        for atk in session.boss_attacks:
+            if atk.get("special") == "corpse_explosion":
+                if len(skeletons) > 0:
+                    valid_attacks.extend([atk, atk]) 
+            else:
+                valid_attacks.append(atk)
+                
+        boss_atk = random.choice(valid_attacks)
         session.boss_turns_taken += 1
         is_ultimate = False
 
+    is_corpse_explosion = boss_atk.get("special") == "corpse_explosion"
+    skel_count = len(skeletons) if is_corpse_explosion else 0
+
     targets = []
-    if boss_atk["target"] == "aoe":
+    if is_corpse_explosion:
+        targets = alive_players
+        atk_type_text = f"подрывая {skel_count} скелет(ов)"
+        for sk in skeletons: 
+            sk["is_skeleton"] = False
+            if sk["id"] in session.turn_order:
+                session.turn_order.remove(sk["id"])
+    elif boss_atk["target"] == "aoe":
         targets = alive_players
         atk_type_text = "масштабную AOE атаку"
     elif boss_atk["target"].startswith("multi_"):
@@ -240,7 +252,10 @@ def execute_boss_attack(alive_players):
         atk_mod = 1.0 - sum(b["value"] for b in session.boss_debuffs["atk_down"].values())
         atk_mod = max(0.1, atk_mod)
         
-        base_dmg = int(random.randint(boss_atk["min_damage"], boss_atk["max_damage"]) * atk_mod)
+        if is_corpse_explosion:
+            base_dmg = int((50 * skel_count) * atk_mod)
+        else:
+            base_dmg = int(random.randint(boss_atk["min_damage"], boss_atk["max_damage"]) * atk_mod)
         
         def_mod = 1.0
         for b in session.party_buffs["def"].values():
@@ -259,8 +274,11 @@ def execute_boss_attack(alive_players):
             boss_atk_text += f" ☣️ Наложен эффект: {boss_atk['effect']['type']}!"
 
         if t["hp"] <= 0:
-            t["is_alive"] = False; death_reports += f"\n💀 <@{t['id']}> погиб!"
-            if t["id"] in session.turn_order: session.turn_order.remove(t["id"])
+            t["is_alive"] = False
+            if session.boss_name == "Проклятый Некромант": t["is_skeleton"] = True
+            death_reports += f"\n💀 <@{t['id']}> погиб!"
+            if not t.get("is_skeleton") and t["id"] in session.turn_order: 
+                session.turn_order.remove(t["id"])
 
     if total_heal > 0:
         session.boss_hp = min(session.boss_max_hp, session.boss_hp + total_heal)

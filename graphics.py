@@ -6,11 +6,13 @@ from pilmoji import Pilmoji
 import config
 from game_state import session
 
-def get_player_sprite(class_name):
+def get_player_sprite(class_name, is_skeleton=False):
     cfg = config.VIEW_CONFIG["spritesheet"]
-    if not os.path.exists(cfg["path"]): return None
+    path = "assets/павший.png" if is_skeleton else cfg["path"]
+    
+    if not os.path.exists(path): return None
     try:
-        sheet = Image.open(cfg["path"]).convert("RGBA")
+        sheet = Image.open(path).convert("RGBA")
         frame_w = sheet.width // cfg["columns"]
         frame_h = sheet.height // cfg["rows"]
         col, row = cfg["mapping"].get(class_name, (0,0))
@@ -81,17 +83,37 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
     p_w, p_h = party_cfg["sprite_width"], party_cfg["sprite_height"]
     start_x, spacing_x, base_y = party_cfg["start_x"], party_cfg["spacing_x"], party_cfg["base_y"]
 
-    for idx, p_id in enumerate(reversed(session.turn_order)):
+    display_players = session.turn_order
+
+    for idx, p_id in enumerate(reversed(display_players)):
         player = session.players[p_id]
-        if not player["is_alive"]: continue
+        is_skel = player.get("is_skeleton", False)
             
-        real_idx = len(session.turn_order) - 1 - idx
+        real_idx = len(display_players) - 1 - idx
         x = start_x + (real_idx * spacing_x)
         y = base_y - (real_idx * party_cfg["perspective_step_y"])
 
         if p_id == current_player_id:
             x -= party_cfg["attacker_advance_x"]
             y += party_cfg["attacker_advance_y"]
+            
+        if is_skel:
+            skel_img = get_player_sprite(player['class'], is_skeleton=True)
+            if skel_img is not None:
+                # 🔥 Убрали сложный расчет пропорций, теперь размер 1-в-1 как у живых!
+                skel_img = skel_img.resize((p_w, p_h), Image.Resampling.NEAREST)
+                bg.paste(skel_img, (x, y), skel_img)
+            else:
+                draw.rectangle([x, y, x + p_w, y + p_h], fill=(40, 40, 40, 200), outline=(150, 150, 150), width=2)
+                with Pilmoji(bg) as pilmoji:
+                    pilmoji.text((x + p_w//2 - 12, y + p_h//2 - 12), "💀", font=font_name)
+            
+            skel_text = "Скелет"
+            _, _, sk_tw, _ = draw.textbbox((0, 0), skel_text, font=font_name)
+            sk_tx = x + (p_w - sk_tw) // 2
+            with Pilmoji(bg) as pilmoji:
+                pilmoji.text((sk_tx, y - 25), skel_text, fill="black", font=font_name)
+            continue
             
         p_img = get_player_sprite(player['class'])
         if p_img is not None:
@@ -104,18 +126,23 @@ def generate_battle_image(current_player_id=None, boss_action_ready=False):
         name_color = "#FFD700" if p_id == current_player_id else "white"
         p_name = player["name"][:10] + (" [С]" if player.get("strafe_turns", 0) > 0 else "")
         
-        draw.rectangle([x, y - 20, x + p_w, y - 12], fill=(60, 20, 20))
+        _, _, text_width, _ = draw.textbbox((0, 0), p_name, font=font_name)
+        text_x = x + (p_w - text_width) // 2
+        
+        hp_w = max(40, text_width) 
+        hp_x = x + (p_w - hp_w) // 2
+        
+        draw.rectangle([hp_x, y - 20, hp_x + hp_w, y - 12], fill=(60, 20, 20))
         p_hp_percent = player["hp"] / player["max_hp"]
-        draw.rectangle([x, y - 20, x + int(p_w * p_hp_percent), y - 12], fill=(40, 220, 40))
+        draw.rectangle([hp_x, y - 20, hp_x + int(hp_w * p_hp_percent), y - 12], fill=(40, 220, 40))
         
         with Pilmoji(bg) as pilmoji:
-            pilmoji.text((x, y - 45), p_name, fill=name_color, font=font_name)
+            pilmoji.text((text_x, y - 45), p_name, fill=name_color, font=font_name)
 
     img_byte_arr = io.BytesIO()
     bg.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
     return discord.File(fp=img_byte_arr, filename="battle.png")
-
 
 def generate_profile_image(player_data, total_stats, avatar_bytes=None):
     bg = Image.new("RGBA", (600, 300), (30, 30, 35, 255))
@@ -174,7 +201,6 @@ def generate_profile_image(player_data, total_stats, avatar_bytes=None):
     img_byte_arr.seek(0)
     return discord.File(fp=img_byte_arr, filename="profile.png")
 
-# 🔥 НОВАЯ ФУНКЦИЯ: ЭКРАН ПОБЕДЫ/ПОРАЖЕНИЯ
 def generate_endgame_image(is_victory):
     canvas_cfg = config.VIEW_CONFIG.get("canvas", {"width": 1200, "height": 400})
     c_w, c_h = canvas_cfg["width"], canvas_cfg["height"]
@@ -194,7 +220,6 @@ def generate_endgame_image(is_victory):
         except FileNotFoundError:
             bg = Image.new("RGBA", (c_w, c_h), (40, 40, 40, 255))
 
-    # Накладываем темный полупрозрачный слой
     overlay = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 180))
     bg.paste(overlay, (0, 0), overlay)
 
@@ -216,7 +241,6 @@ def generate_endgame_image(is_victory):
             color = "#FF4500"
             subtext = "Отряд был уничтожен"
 
-        # Центрируем текст
         _, _, w, h = draw.textbbox((0, 0), text, font=font_large)
         pilmoji.text(((c_w - w) // 2, (c_h - h) // 2 - 40), text, fill=color, font=font_large)
 

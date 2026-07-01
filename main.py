@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 import config
 from game_state import session
 import database
-# 🔥 Импортируем новую функцию экрана конца игры
 from graphics import generate_battle_image, generate_profile_image, generate_endgame_image
 from effects import generate_status_text
 from combat import clean_dead_casters, execute_skill, process_global_tick, execute_boss_attack
@@ -36,8 +35,8 @@ async def show_profile(ctx):
     avatar_bytes = None
     try:
         avatar_bytes = await ctx.author.display_avatar.replace(size=256, format="png").read()
-    except Exception as e:
-        print(f"Не удалось загрузить аватар: {e}")
+    except Exception:
+        pass
         
     file = generate_profile_image(player_data, stats, avatar_bytes)
     view = ProfileView(ctx.author.id)
@@ -95,15 +94,18 @@ async def start_boss(ctx, *, requested_boss: str = None):
 
     while session.boss_hp > 0:
         if not [p for p in session.players.values() if p["is_alive"]]: break
-
         clean_dead_casters()
-
+        
         if not session.turn_order: break
+            
         p_id = session.turn_order[0]
         player = session.players[p_id]
         
+        # 🔥 ПРОПУСК ХОДА СКЕЛЕТОМ: Мгновенно перекидываем в конец очереди
         if not player["is_alive"]:
-            session.turn_order.pop(0)
+            popped = session.turn_order.pop(0)
+            if player.get("is_skeleton"):
+                session.turn_order.append(popped)
             continue
 
         action_text, tick_text, dmg = "", "", 0
@@ -140,9 +142,11 @@ async def start_boss(ctx, *, requested_boss: str = None):
         if not is_ode and session.boss_hp > 0:
             tick_text, boss_trigger = process_global_tick(p_id)
 
+        # 🔥 ОБЫЧНЫЙ СДВИГ ОЧЕРЕДИ: Убираем текущего игрока или его свежий скелет в конец
         if session.turn_order and session.turn_order[0] == p_id:
             popped = session.turn_order.pop(0)
-            if player["is_alive"]: session.turn_order.append(popped)
+            if player["is_alive"] or player.get("is_skeleton"): 
+                session.turn_order.append(popped)
         
         status_content = generate_status_text()
         await battle_msg.edit(content=f"⚔️ <@{p_id}> {action_text}{tick_text} (У босса: {session.boss_hp} HP)", attachments=[generate_battle_image(None, boss_trigger)], view=None)
@@ -168,7 +172,6 @@ async def start_boss(ctx, *, requested_boss: str = None):
             delay = max(5.0, min(14.0, 4.0 + (lines_count * 0.4)))
             await asyncio.sleep(delay)
 
-    # 🔥 ЗАМЕНЯЕМ КАРТИНКУ НА ЭКРАН ПОБЕДЫ ИЛИ ПОРАЖЕНИЯ
     if session.boss_hp <= 0: 
         reward_text = ""
         for p in session.players.values():

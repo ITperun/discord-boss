@@ -29,7 +29,12 @@ def generate_status_text():
     if party_text: text += "\n👥 **Командные Эффекты:**\n" + party_text
     
     boss_text = ""
-    # 🔥 Добавлено отображение сопротивления ко льду!
+    
+    # 🔥 НОВОЕ: Счетчик скелетов
+    skel_count = sum(1 for p in session.players.values() if p.get("is_skeleton"))
+    if skel_count > 0:
+        boss_text += f"🦴 **Скелетов на поле:** {skel_count}\n"
+        
     if session.boss_slow_stacks > 0:
         boss_text += f"🧊 **Сопротивление льду:** {session.boss_slow_stacks}/2\n"
         
