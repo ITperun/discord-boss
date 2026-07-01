@@ -21,9 +21,9 @@
     "name": "Проклятый Некромант",
     "hp": 1200,
     "defense": 0.20,
-    "reward": 1000,
+    "reward": 1500,
     "attacks": [
-      {"name": "⚡ Стрела Скверны", "target": "single", "min_damage": 45, "max_damage": 65, "effect": {"type": "отравление", "duration": 5, "value": 0.30}},
+      {"name": "⚡ Стрела Скверны", "target": "single", "min_damage": 45, "max_damage": 65, "effect": {"type": "отравление", "duration": 3, "value": 0.30}},
       {"name": "🩸 Вытягивание жизни", "target": "multi_2", "min_damage": 35, "max_damage": 50, "heal_pct": 1.0, "effect": null},
       {"name": "💥 Взрыв трупов", "target": "aoe", "min_damage": 50, "max_damage": 50, "special": "corpse_explosion"}
     ],
@@ -32,8 +32,8 @@
       "target": "aoe",
       "min_damage": 60,
       "max_damage": 80,
-      "heal_pct": 0.3,
-      "effect": {"type": "отравление", "duration": 13, "value": 0.30}
+      "heal_pct": 0.5,
+      "effect": {"type": "отравление", "duration": 3, "value": 0.30, "stacks": 2}
     }
   },
   {

@@ -270,7 +270,17 @@ def execute_boss_attack(alive_players):
             total_heal += int(boss_damage * boss_atk["heal_pct"])
         
         if boss_atk.get("effect") and t["hp"] > 0:
-            t["debuffs"].append({"type": boss_atk["effect"]["type"], "duration": boss_atk["effect"]["duration"], "value": boss_atk["effect"].get("value", 0.30)})
+            stacks = boss_atk["effect"].get("stacks", 1)
+            dur = boss_atk["effect"]["duration"]
+            
+            for _ in range(stacks):
+                t["debuffs"].append({
+                    "type": boss_atk["effect"]["type"], 
+                    "duration": dur, 
+                    "value": boss_atk["effect"].get("value", 0.30)
+                })
+            
+            # Пишем один раз, без лишних "штук" и "ходов", как и было
             boss_atk_text += f" ☣️ Наложен эффект: {boss_atk['effect']['type']}!"
 
         if t["hp"] <= 0:

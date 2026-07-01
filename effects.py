@@ -60,9 +60,9 @@ def generate_status_text():
         
         p_effects = []
         for d in p["debuffs"]:
-            p_effects.append(f"🤒 {d['type'].capitalize()} ({d['duration']}х)")
+            p_effects.append(f"🤒 {d['type'].capitalize()} (Ост: {d['duration']}х)")
         if p.get("strafe_turns", 0) > 0:
-            p_effects.append(f"🌪️ Стрейф ({p['strafe_turns']}х)")
+            p_effects.append(f"🌪️ Стрейф (Ост: {p['strafe_turns']}х)")
             
         if p_effects:
             mention_or_name = p['name'] if p.get("is_npc") else f"<@{p['id']}>"
