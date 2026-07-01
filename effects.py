@@ -10,17 +10,16 @@ def generate_status_text():
         party_text += f"🟢 **Атака:** +{total}% (Ост: {dur} х.)\n"
     
     if session.party_buffs["def"]:
-        # 🔥 Считаем мультипликативную защиту для правильного отображения
         def_mod = 1.0
         for b in session.party_buffs["def"].values():
             def_mod *= (1.0 - b["value"])
             
-        total = int((1.0 - def_mod) * 100) # Превращаем множитель обратно в красивые проценты
+        total = int((1.0 - def_mod) * 100) 
         dur = max(b["duration"] for b in session.party_buffs["def"].values())
         party_text += f"🛡️ **Защита:** +{total}% (Ост: {dur} х.)\n"
         
     if session.party_buffs["regen"]:
-        total = len(session.party_buffs["regen"]) * 7
+        total = len(session.party_buffs["regen"]) * 10
         dur = max(b["duration"] for b in session.party_buffs["regen"])
         party_text += f"❤️ **Регенерация:** +{total} HP/ход (Ост: {dur} х.)\n"
     if session.party_buffs["vamp"]:
@@ -30,6 +29,10 @@ def generate_status_text():
     if party_text: text += "\n👥 **Командные Эффекты:**\n" + party_text
     
     boss_text = ""
+    # 🔥 Добавлено отображение сопротивления ко льду!
+    if session.boss_slow_stacks > 0:
+        boss_text += f"🧊 **Сопротивление льду:** {session.boss_slow_stacks}/2\n"
+        
     if session.boss_ultimate:
         boss_text += f"🌟 **Зарядка Ультимейта:** {session.boss_turns_taken}/3\n"
     if session.boss_debuffs["def_down"]:

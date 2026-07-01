@@ -5,13 +5,20 @@
         "inventory": [
             "rusty_sword",
             "leather_tunic",
-            "apprentice_staff"
+            "apprentice_staff",
+            "dragon_slayer",
+            "necro_skull",
+            "dragon_scale",
+            "lucky_ring",
+            "thief_cloak",
+            "lucky_ring",
+            "thief_cloak"
         ],
         "equipment": {
-            "weapon": "rusty_sword",
-            "armor": "leather_tunic",
-            "acc1": null,
-            "acc2": null
+            "weapon": "necro_skull",
+            "armor": "dragon_scale",
+            "acc1": "lucky_ring",
+            "acc2": "lucky_ring"
         }
     }
 }

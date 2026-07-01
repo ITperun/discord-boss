@@ -14,20 +14,32 @@ def clean_dead_casters():
             if cid not in alive_ids: del debuff_dict[cid]
     session.boss_debuffs["dots"] = [d for d in session.boss_debuffs["dots"] if d.get("caster_id") in alive_ids]
 
+def get_combat_stats(p_id, player):
+    """Получает статы из базы и применяет дебафф 'Ослабление'"""
+    stats = database.get_total_stats(p_id)
+    weakness = sum(d.get("value", 0.3) for d in player["debuffs"] if d["type"] == "ослабление")
+    
+    if weakness > 0:
+        stat_mod = max(0.1, 1.0 - weakness)
+        stats["STR"] = max(1, int(stats["STR"] * stat_mod))
+        stats["AGI"] = max(1, int(stats["AGI"] * stat_mod))
+        stats["INT"] = max(1, int(stats["INT"] * stat_mod))
+        stats["CHA"] = max(1, int(stats["CHA"] * stat_mod))
+        
+    return stats
+
 def execute_skill(p_id, player, skill, target_id):
     sid = skill["id"]
     action_text = f"\nИспользует **{skill['name']}**"
     is_ode = False
     
-    # ⚔️ ПОЛУЧАЕМ СТАТЫ ИГРОКА ИЗ БАЗЫ
-    stats = database.get_total_stats(p_id)
+    # ⚔️ ПОЛУЧАЕМ СТАТЫ С УЧЕТОМ ОСЛАБЛЕНИЯ (влияет на урон, хил и баффы)
+    stats = get_combat_stats(p_id, player)
     
     base_dmg = 0
-    # 💥 СИСТЕМА УРОНА ОТ СТАТОВ
     if sid == "warrior_execute": 
-        # 🔥 Возвращаем механику добивания!
         if session.boss_hp < (session.boss_max_hp / 2):
-            base_dmg = 40 + int(stats["STR"] * 4.0) # Двойной скейлинг!
+            base_dmg = 40 + int(stats["STR"] * 4.0) 
             action_text += " 🩸 **ДОБИВАНИЕ!**"
         else:
             base_dmg = 20 + int(stats["STR"] * 2.0)
@@ -39,7 +51,6 @@ def execute_skill(p_id, player, skill, target_id):
     elif sid == "ranger_shot": base_dmg = 25 + int(stats["AGI"] * 1.8)
     elif sid == "necro_touch": base_dmg = 10 + int(stats["INT"] * 1.2)
 
-    # 🍀 ШАНС КРИТИЧЕСКОГО УДАРА (LUK)
     is_crit = False
     if base_dmg > 0 and random.randint(1, 100) <= stats["LUK"]:
         base_dmg = int(base_dmg * 1.5)
@@ -47,44 +58,45 @@ def execute_skill(p_id, player, skill, target_id):
 
     dmg = 0
     if base_dmg > 0:
-        atk_mod = 1.0 + sum(b["value"] for b in session.party_buffs["atk"].values()) - sum(d.get("value", 0.3) for d in player["debuffs"] if d["type"]=="ослабление")
+        atk_mod = 1.0 + sum(b["value"] for b in session.party_buffs["atk"].values())
         atk_mod = max(0.1, atk_mod) 
         
-        # 🔻 Отрицательная броня увеличивает урон (механика уязвимости)
+        # 🔻 Механика уязвимости: если броня босса в минусе, урон увеличивается
         boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
         
         dmg = max(1, int((base_dmg * atk_mod) * (1.0 - boss_def)))
         action_text += f" и наносит **{dmg}** урона!"
         if is_crit: action_text += " 💥 **КРИТИЧЕСКИЙ УДАР!**"
         
-    if sid == "warrior_shield": session.party_buffs["def"][p_id] = {"value": 0.25, "duration": 7}; action_text += " 🛡️ Защита усилена!"
+    if sid == "warrior_shield": session.party_buffs["def"][p_id] = {"value": 0.35, "duration": 10}; action_text += " 🛡️ Защита усилена!"
     elif sid == "warrior_provoke":
-        session.boss_debuffs["def_down"][p_id] = {"value": 0.20, "duration": 7}; action_text += " 📢 Босс спровоцирован!"
+        session.boss_debuffs["def_down"][p_id] = {"value": 0.30, "duration": 10}; action_text += " 📢 Босс спровоцирован!"
         if random.random() < 0.3:
-            # 🛡️ Мультипликативная защита, если босс бьет в ответ
             def_mod = 1.0
             for b in session.party_buffs["def"].values():
                 def_mod *= (1.0 - b["value"])
             c_dmg = max(1, int(random.randint(40,65) * def_mod))
-            
             player["hp"] = max(0, player["hp"] - c_dmg); action_text += f"\n⚠️ Босс отвечает! Получено **{c_dmg}** урона!"
             if player["hp"] <= 0: player["is_alive"] = False
-    elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 9, "duration": 3, "caster_id": p_id}); action_text += " 🔥 Босс подожжен!"
+            
+    elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 12, "duration": 5, "caster_id": p_id}); action_text += " 🔥 Босс подожжен!"
     elif sid == "mage_ice" and random.random() < 0.9:
         if session.boss_slow_stacks >= 2: action_text += " ❌ У босса иммунитет ко льду!"
-        else: session.boss_slow_stacks += 1; session.boss_cooldown_counter = max(0, session.boss_cooldown_counter - 1); action_text += " ❄️ Зарядка заморожена!"
+        else: 
+            session.boss_slow_stacks += 1
+            session.boss_cooldown_counter = 0
+            action_text += " ❄️ Подготовка атаки босса ПОЛНОСТЬЮ СБИТА!"
     elif sid == "mage_lightning" and random.random() < 0.3: player["hp"] = max(1, player["hp"] - 30); action_text += "\n⚠️ Маг теряет 30 HP от перегрузки!"
     
-    # 🎵 ХАРИЗМА БАРДА УСИЛИВАЕТ БАФФЫ (+0.5% за каждую единицу CHA)
     elif sid == "bard_regen": 
         cha_bonus = (stats["CHA"] * 0.005)
-        session.party_buffs["regen"].append({"duration": 4})
-        session.party_buffs["atk"][p_id] = {"value": 0.10 + cha_bonus, "duration": 4}
+        session.party_buffs["regen"].append({"duration": 10})
+        session.party_buffs["atk"][p_id] = {"value": 0.10 + cha_bonus, "duration": 10}
         action_text += f" 🎺 Атака (+{int((0.10+cha_bonus)*100)}%) и реген отряда!"
     elif sid == "bard_ode":
         if target_id:
             cha_bonus = (stats["CHA"] * 0.005)
-            session.party_buffs["atk"][p_id] = {"value": 0.20 + cha_bonus, "duration": 4}
+            session.party_buffs["atk"][p_id] = {"value": 0.20 + cha_bonus, "duration": 5}
             if target_id in session.turn_order: session.turn_order.remove(target_id)
             session.turn_order.insert(1, target_id)
             action_text += " 🎸 Выбранный союзник получает ход вне очереди!"
@@ -92,26 +104,40 @@ def execute_skill(p_id, player, skill, target_id):
         else:
             action_text += " 🎸 Но слушать оказалось некому!"
             
+    # 🔥 ОБНОВЛЕННАЯ ЛОГИКА ЖРЕЦА С ВЫВОДОМ ЧИСЕЛ
     elif sid == "priest_smite":
-        heal_amt = 5 + int(stats["INT"] * 0.5)
+        heal_amt = 8 + int(stats["INT"] * 0.5)
         for p in session.players.values():
             if p["is_alive"]: p["hp"] = min(p["max_hp"], p["hp"] + heal_amt)
+        action_text += f" ✨ Отряд исцелен на **{heal_amt}** HP!"
+        
     elif sid == "priest_great_heal" and target_id: 
         heal_amt = 40 + int(stats["INT"] * 2.0)
-        session.players[target_id]["hp"] = min(session.players[target_id]["max_hp"], session.players[target_id]["hp"] + heal_amt)
+        target = session.players[target_id]
+        
+        # Считаем, сколько ХП реально было восстановлено, чтобы не писать лишнего, если цель почти фулловая
+        actual_heal = min(target["max_hp"] - target["hp"], heal_amt)
+        target["hp"] += actual_heal
+        
+        mention = target['name'] if target.get('is_npc') else f"<@{target_id}>"
+        action_text += f" 💖 На {mention} восстановлено **{actual_heal}** HP!"
+        
     elif sid == "priest_heal":
         heal_amt = 15 + int(stats["INT"] * 1.5)
         for p in session.players.values():
             if p["is_alive"]: p["hp"] = min(p["max_hp"], p["hp"] + heal_amt)
+        action_text += f" 🌊 Каждый член отряда восстанавливает **{heal_amt}** HP!"
             
-    elif sid == "ranger_strafe": player["strafe_turns"] = 4; action_text += " 🌪️ Стойка стрейфа активирована!"
-    elif sid == "ranger_focus": session.boss_debuffs["def_down"][p_id] = {"value": 0.40, "duration": 6}; action_text += " 🎯 Защита босса снижена на 40%!"
-    elif sid == "necro_vampire": session.party_buffs["vamp"][p_id] = {"duration": 7}; action_text += " 🦇 Наложен Вампиризм!"
-    elif sid == "necro_curse": session.boss_debuffs["atk_down"][p_id] = {"value": 0.30, "duration": 4}; action_text += " 💀 Атака босса снижена на 30%!"
+    elif sid == "ranger_strafe": player["strafe_turns"] = 5; action_text += " 🌪️ Стойка стрейфа активирована!"
+    elif sid == "ranger_focus": session.boss_debuffs["def_down"][p_id] = {"value": 0.40, "duration": 7}; action_text += " 🎯 Защита босса снижена на 40%!"
+    
+    elif sid == "necro_vampire": session.party_buffs["vamp"][p_id] = {"duration": 12}; action_text += " 🦇 Наложен Вампиризм!"
+    elif sid == "necro_curse": session.boss_debuffs["atk_down"][p_id] = {"value": 0.35, "duration": 10}; action_text += " 💀 Атака босса снижена на 35%!"
 
     session.boss_hp = max(0, session.boss_hp - dmg)
+    
     if session.party_buffs["vamp"] and dmg > 0:
-        v_heal = int(dmg * 0.5); player["hp"] = min(player["max_hp"], player["hp"] + v_heal); action_text += f" 🦇 Отхил: {v_heal} HP!"
+        v_heal = int(dmg * 0.6); player["hp"] = min(player["max_hp"], player["hp"] + v_heal); action_text += f" 🦇 Отхил: **{v_heal}** HP!"
         
     return action_text, dmg, is_ode
 
@@ -127,18 +153,18 @@ def process_global_tick(p_id):
             session.boss_debuffs[cat][sid_key]["duration"] -= 1
             if session.boss_debuffs[cat][sid_key]["duration"] <= 0: del session.boss_debuffs[cat][sid_key]
 
-    regen_heal = len(session.party_buffs["regen"]) * 7
+    regen_heal = len(session.party_buffs["regen"]) * 10
     if regen_heal > 0:
         for p in session.players.values():
             if p["is_alive"]: p["hp"] = min(p["max_hp"], p["hp"] + regen_heal)
-        tick_text += f"\n💚 Реген: отряд восстановил {regen_heal} HP."
+        tick_text += f"\n💚 Реген: отряд восстановил **{regen_heal}** HP."
     for r in session.party_buffs["regen"]: r["duration"] -= 1
     session.party_buffs["regen"] = [r for r in session.party_buffs["regen"] if r["duration"] > 0]
     
     dot_dmg = sum(d["damage"] for d in session.boss_debuffs["dots"])
     if dot_dmg > 0:
         session.boss_hp = max(0, session.boss_hp - dot_dmg)
-        tick_text += f"\n🔥 Босс получает {dot_dmg} период. урона."
+        tick_text += f"\n🔥 Босс получает **{dot_dmg}** период. урона."
     for d in session.boss_debuffs["dots"]: d["duration"] -= 1
     session.boss_debuffs["dots"] = [d for d in session.boss_debuffs["dots"] if d["duration"] > 0]
     
@@ -147,7 +173,7 @@ def process_global_tick(p_id):
         p_dot = sum(9 for d in p["debuffs"] if d["type"] in ["горение", "отравление"])
         if p_dot > 0:
             p["hp"] -= p_dot
-            tick_text += f"\n☠️ {p['name']} получает {p_dot} урон от дебаффов."
+            tick_text += f"\n☠️ {p['name']} получает **{p_dot}** урон от дебаффов."
             if p["hp"] <= 0:
                 p["is_alive"] = False
                 tick_text += f" 💀 Погиб!"
@@ -157,7 +183,7 @@ def process_global_tick(p_id):
         
     for p in session.players.values():
         if p["is_alive"] and p.get("strafe_turns", 0) > 0:
-            stats = database.get_total_stats(p["id"])
+            stats = get_combat_stats(p["id"], p)
             boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
             
             base_arr = 5 + int(stats["AGI"] * 0.5)
@@ -165,7 +191,7 @@ def process_global_tick(p_id):
             dmg2 = max(1, int(random.randint(base_arr, base_arr+5) * (1.0 - boss_def)))
             
             session.boss_hp = max(0, session.boss_hp - (dmg1 + dmg2))
-            tick_text += f"\n🏹 Авто-Стрейф ({p['name']}) наносит {dmg1} и {dmg2} урона!"
+            tick_text += f"\n🏹 Авто-Стрейф ({p['name']}) наносит **{dmg1}** и **{dmg2}** урона!"
             p["strafe_turns"] -= 1
             
     alive_count = len([p for p in session.players.values() if p["is_alive"]])
@@ -216,7 +242,6 @@ def execute_boss_attack(alive_players):
         
         base_dmg = int(random.randint(boss_atk["min_damage"], boss_atk["max_damage"]) * atk_mod)
         
-        # 🛡️ МУЛЬТИПЛИКАТИВНАЯ ЗАЩИТА (Умножаем остатки урона)
         def_mod = 1.0
         for b in session.party_buffs["def"].values():
             def_mod *= (1.0 - b["value"])

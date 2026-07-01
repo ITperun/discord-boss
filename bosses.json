@@ -5,16 +5,16 @@
     "defense": 0.15,
     "reward": 150,
     "attacks": [
-      {"name": "🪓 Тяжелый замах", "target": "single", "min_damage": 55, "max_damage": 75, "effect": null},
+      {"name": "🪓 Тяжелый замах", "target": "single", "min_damage": 55, "max_damage": 85, "effect": null},
       {"name": "🌪️ Размашистый удар", "target": "multi_2", "min_damage": 40, "max_damage": 55, "effect": null},
-      {"name": "📢 Оглушительный крик", "target": "aoe", "min_damage": 25, "max_damage": 35, "effect": {"type": "ослабление", "duration": 2, "value": 0.20}}
+      {"name": "📢 Оглушительный крик", "target": "aoe", "min_damage": 15, "max_damage": 35, "effect": {"type": "ослабление", "duration": 3, "value": 0.20}}
     ],
     "ultimate": {
       "name": "💥 РАЗРУШИТЕЛЬНОЕ ЗЕМЛЕТРЯСЕНИЕ",
       "target": "aoe",
-      "min_damage": 55,
-      "max_damage": 75,
-      "effect": {"type": "ослабление", "duration": 3, "value": 0.30}
+      "min_damage": 75,
+      "max_damage": 85,
+      "effect": {"type": "ослабление", "duration": 7, "value": 0.30}
     }
   },
   {
