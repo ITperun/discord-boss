@@ -23,8 +23,15 @@ def execute_skill(p_id, player, skill, target_id):
     stats = database.get_total_stats(p_id)
     
     base_dmg = 0
-    # 💥 НОВАЯ СИСТЕМА УРОНА ОТ СТАТОВ
-    if sid == "warrior_execute": base_dmg = 20 + int(stats["STR"] * 2.0)
+    # 💥 СИСТЕМА УРОНА ОТ СТАТОВ
+    if sid == "warrior_execute": 
+        # 🔥 Возвращаем механику добивания!
+        if session.boss_hp < (session.boss_max_hp / 2):
+            base_dmg = 40 + int(stats["STR"] * 4.0) # Двойной скейлинг!
+            action_text += " 🩸 **ДОБИВАНИЕ!**"
+        else:
+            base_dmg = 20 + int(stats["STR"] * 2.0)
+            
     elif sid in ["mage_fireball", "mage_ice"]: base_dmg = 15 + int(stats["INT"] * 1.5)
     elif sid == "mage_lightning": base_dmg = 25 + int(stats["INT"] * 2.0)
     elif sid == "priest_smite": base_dmg = 10 + int(stats["INT"] * 1.0)
@@ -41,8 +48,12 @@ def execute_skill(p_id, player, skill, target_id):
     dmg = 0
     if base_dmg > 0:
         atk_mod = 1.0 + sum(b["value"] for b in session.party_buffs["atk"].values()) - sum(d.get("value", 0.3) for d in player["debuffs"] if d["type"]=="ослабление")
+        atk_mod = max(0.1, atk_mod) 
+        
+        # 🔻 Отрицательная броня увеличивает урон (механика уязвимости)
         boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
-        dmg = max(1, int((base_dmg * max(0.1, atk_mod)) * (1.0 - boss_def)))
+        
+        dmg = max(1, int((base_dmg * atk_mod) * (1.0 - boss_def)))
         action_text += f" и наносит **{dmg}** урона!"
         if is_crit: action_text += " 💥 **КРИТИЧЕСКИЙ УДАР!**"
         
@@ -50,7 +61,12 @@ def execute_skill(p_id, player, skill, target_id):
     elif sid == "warrior_provoke":
         session.boss_debuffs["def_down"][p_id] = {"value": 0.20, "duration": 7}; action_text += " 📢 Босс спровоцирован!"
         if random.random() < 0.3:
-            c_dmg = max(1, int(random.randint(40,65) * (1.0 - sum(b["value"] for b in session.party_buffs["def"].values()))))
+            # 🛡️ Мультипликативная защита, если босс бьет в ответ
+            def_mod = 1.0
+            for b in session.party_buffs["def"].values():
+                def_mod *= (1.0 - b["value"])
+            c_dmg = max(1, int(random.randint(40,65) * def_mod))
+            
             player["hp"] = max(0, player["hp"] - c_dmg); action_text += f"\n⚠️ Босс отвечает! Получено **{c_dmg}** урона!"
             if player["hp"] <= 0: player["is_alive"] = False
     elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 9, "duration": 3, "caster_id": p_id}); action_text += " 🔥 Босс подожжен!"
@@ -144,7 +160,6 @@ def process_global_tick(p_id):
             stats = database.get_total_stats(p["id"])
             boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
             
-            # Урон стрейфа тоже от AGI
             base_arr = 5 + int(stats["AGI"] * 0.5)
             dmg1 = max(1, int(random.randint(base_arr, base_arr+5) * (1.0 - boss_def)))
             dmg2 = max(1, int(random.randint(base_arr, base_arr+5) * (1.0 - boss_def)))
@@ -191,15 +206,21 @@ def execute_boss_attack(alive_players):
     death_reports = ""
     total_heal = 0
     for t in targets:
-        # 💨 ПРОВЕРКА УКЛОНЕНИЯ (DEX)
         t_stats = database.get_total_stats(t["id"])
         if random.randint(1, 100) <= t_stats["DEX"]:
             boss_atk_text += f"\n💨 <@{t['id']}> **УКЛОНЯЕТСЯ** от атаки!"
             continue
             
         atk_mod = 1.0 - sum(b["value"] for b in session.boss_debuffs["atk_down"].values())
-        base_dmg = int(random.randint(boss_atk["min_damage"], boss_atk["max_damage"]) * max(0.1, atk_mod))
-        def_mod = 1.0 - sum(b["value"] for b in session.party_buffs["def"].values())
+        atk_mod = max(0.1, atk_mod)
+        
+        base_dmg = int(random.randint(boss_atk["min_damage"], boss_atk["max_damage"]) * atk_mod)
+        
+        # 🛡️ МУЛЬТИПЛИКАТИВНАЯ ЗАЩИТА (Умножаем остатки урона)
+        def_mod = 1.0
+        for b in session.party_buffs["def"].values():
+            def_mod *= (1.0 - b["value"])
+            
         boss_damage = max(1, int(base_dmg * def_mod))
         
         t["hp"] = max(0, t["hp"] - boss_damage)

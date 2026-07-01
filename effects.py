@@ -8,10 +8,17 @@ def generate_status_text():
         total = int(sum(b["value"] for b in session.party_buffs["atk"].values()) * 100)
         dur = max(b["duration"] for b in session.party_buffs["atk"].values())
         party_text += f"🟢 **Атака:** +{total}% (Ост: {dur} х.)\n"
+    
     if session.party_buffs["def"]:
-        total = int(sum(b["value"] for b in session.party_buffs["def"].values()) * 100)
+        # 🔥 Считаем мультипликативную защиту для правильного отображения
+        def_mod = 1.0
+        for b in session.party_buffs["def"].values():
+            def_mod *= (1.0 - b["value"])
+            
+        total = int((1.0 - def_mod) * 100) # Превращаем множитель обратно в красивые проценты
         dur = max(b["duration"] for b in session.party_buffs["def"].values())
         party_text += f"🛡️ **Защита:** +{total}% (Ост: {dur} х.)\n"
+        
     if session.party_buffs["regen"]:
         total = len(session.party_buffs["regen"]) * 7
         dur = max(b["duration"] for b in session.party_buffs["regen"])

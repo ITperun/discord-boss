@@ -2,18 +2,18 @@
   {
     "name": "Орк-Разрушитель",
     "hp": 600,
-    "defense": 0.10,
+    "defense": 0.15,
     "reward": 150,
     "attacks": [
-      {"name": "🪓 Тяжелый замах", "target": "single", "min_damage": 30, "max_damage": 45, "effect": null},
-      {"name": "🌪️ Размашистый удар", "target": "multi_2", "min_damage": 20, "max_damage": 30, "effect": null},
-      {"name": "📢 Оглушительный крик", "target": "aoe", "min_damage": 10, "max_damage": 15, "effect": {"type": "ослабление", "duration": 2, "value": 0.20}}
+      {"name": "🪓 Тяжелый замах", "target": "single", "min_damage": 55, "max_damage": 75, "effect": null},
+      {"name": "🌪️ Размашистый удар", "target": "multi_2", "min_damage": 40, "max_damage": 55, "effect": null},
+      {"name": "📢 Оглушительный крик", "target": "aoe", "min_damage": 25, "max_damage": 35, "effect": {"type": "ослабление", "duration": 2, "value": 0.20}}
     ],
     "ultimate": {
       "name": "💥 РАЗРУШИТЕЛЬНОЕ ЗЕМЛЕТРЯСЕНИЕ",
       "target": "aoe",
-      "min_damage": 40,
-      "max_damage": 55,
+      "min_damage": 55,
+      "max_damage": 75,
       "effect": {"type": "ослабление", "duration": 3, "value": 0.30}
     }
   },

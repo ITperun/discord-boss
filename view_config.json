@@ -24,13 +24,13 @@
     "pos_y": 160
   },
   "party_display": {
-    "sprite_width": 75,
-    "sprite_height": 75,
     "start_x": 450,
-    "spacing_x": 85,
-    "base_y": 235,
+    "spacing_x": 95,
+    "base_y": 250,
     "perspective_step_y": 5,
+    "sprite_width": 110,
+    "sprite_height": 110,
     "attacker_advance_x": 30,
-    "attacker_advance_y": 15
+    "attacker_advance_y": 0
   }
 }
