@@ -1,9 +1,8 @@
 {
     "716643196645539891": {
         "name": "Kumihorane",
-        "gold": 70000,
+        "gold": 70051,
         "inventory": [
-            "rusty_sword",
             "leather_tunic",
             "apprentice_staff",
             "dragon_slayer",
@@ -12,7 +11,8 @@
             "lucky_ring",
             "thief_cloak",
             "lucky_ring",
-            "thief_cloak"
+            "thief_cloak",
+            "novice_dagger"
         ],
         "equipment": {
             "weapon": "necro_skull",

@@ -63,6 +63,24 @@ def add_item(user_id, item_id):
         db[uid]["inventory"].append(item_id)
         save_db(db)
 
+# 🔥 НОВАЯ ФУНКЦИЯ ДЛЯ ПРОДАЖИ (Удаление предмета)
+def remove_item(user_id, item_id):
+    db = load_db()
+    uid = str(user_id)
+    if uid in db and item_id in db[uid]["inventory"]:
+        # Удаляем только одну копию предмета
+        db[uid]["inventory"].remove(item_id)
+        
+        # Если такого предмета больше не осталось в инвентаре, снимаем его с экипировки
+        if item_id not in db[uid]["inventory"]:
+            for slot, eq_id in db[uid]["equipment"].items():
+                if eq_id == item_id:
+                    db[uid]["equipment"][slot] = None
+                    
+        save_db(db)
+        return True
+    return False
+
 def equip_item(user_id, slot, item_id):
     db = load_db()
     uid = str(user_id)
