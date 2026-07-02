@@ -38,20 +38,23 @@
   },
   {
     "name": "Древний Дракон",
-    "hp": 950,
-    "defense": 0.30,
+    "hp": 1500,
+    "defense": 0.60,
     "reward": 5000,
     "attacks": [
-      {"name": "🐾 Удар когтем", "target": "single", "min_damage": 55, "max_damage": 85, "effect": null},
-      {"name": "🔥 Огненный плевок", "target": "multi_2", "min_damage": 30, "max_damage": 45, "effect": {"type": "горение", "duration": 2}},
-      {"name": "💨 Взмах крыльями", "target": "aoe", "min_damage": 25, "max_damage": 40, "effect": null}
+      {"name": "🐾 Удар когтем", "target": "single", "min_damage": 120, "max_damage": 180, "effect": null},
+      {"name": "🔥 Огненный плевок", "target": "multi_4", "min_damage": 80, "max_damage": 125, "effect": {"type": "горение", "duration": 2}},
+      {"name": "💨 Взмах крыльями", "target": "aoe", "min_damage": 80, "max_damage": 150, "effect": null}
     ],
     "ultimate": {
-      "name": "🌋 ИСПЕПЕЛЯЮЩЕЕ ДЫХАНИЕ",
+      "name": "🌋 ИСПЕПЕЛЯЮЩЕЕ ДЫХАНИЕ (АРМАГЕДДОН)",
       "target": "aoe",
-      "min_damage": 55,
-      "max_damage": 75,
-      "effect": {"type": "горение", "duration": 4}
+      "min_damage": 200,
+      "max_damage": 250,
+      "effect": {"type": "горение", "duration": 3, "stacks": 5},
+      "is_flight": true,
+      "flight_threshold": 500,
+      "flight_turns": 3
     }
   }
 ]

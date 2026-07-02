@@ -18,6 +18,12 @@ class GameSession:
         self.boss_turns_taken = 0      
         self.boss_slow_stacks = 0
 
+        # Новые переменные для механики Дракона
+        self.dragon_in_flight = False
+        self.dragon_flight_timer = 0
+        self.dragon_flight_damage = 0
+        self.dragon_flight_threshold = 0
+
     def reset(self):
         self.__init__()
 

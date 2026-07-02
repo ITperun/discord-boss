@@ -1,32 +1,32 @@
 {
   "воин": [
-    {"id": "warrior_execute", "name": "⚔️ Казнь", "desc": "Мощный удар. Наносит двойной урон, если у босса меньше 50% HP (зависит от STR).", "target": "enemy"},
-    {"id": "warrior_shield", "name": "🛡️ Глухая оборона", "desc": "Снижает получаемый отрядом урон на 35% на 5 ходов.", "target": "party"},
-    {"id": "warrior_provoke", "name": "📢 Провокация", "desc": "Снижает броню босса на 30% на 5 ходов. Шанс 30%, что босс ударит в ответ.", "target": "enemy"}
+    {"id": "warrior_execute", "name": "⚔️ Казнь", "desc": "Мощный удар. Наносит двойной урон, если у босса меньше 50% HP (зависит от STR).", "target": "enemy", "type": "melee", "element": "physical"},
+    {"id": "warrior_shield", "name": "🛡️ Глухая оборона", "desc": "Снижает получаемый отрядом урон на 35% на 5 ходов.", "target": "party", "type": "support", "element": "physical"},
+    {"id": "warrior_provoke", "name": "📢 Провокация", "desc": "Снижает броню босса на 30% на 5 ходов. Шанс 30%, что босс ударит в ответ.", "target": "enemy", "type": "support", "element": "physical"}
   ],
   "маг": [
-    {"id": "mage_fireball", "name": "🔥 Огненный шар", "desc": "Урон от INT. 90% шанс поджечь босса (урон каждый ход) на 5 ходов.", "target": "enemy"},
-    {"id": "mage_ice", "name": "❄️ Ледяное копье", "desc": "Урон от INT. Замораживает счетчик атаки босса. После 2 раз босс получает иммунитет.", "target": "enemy"},
-    {"id": "mage_lightning", "name": "⚡ Удар молнии", "desc": "Огромный урон от INT. Шанс 30% получить 30 урона от перегрузки.", "target": "enemy"}
+    {"id": "mage_fireball", "name": "🔥 Огненный шар", "desc": "Урон от INT. 90% шанс поджечь босса (урон каждый ход) на 5 ходов.", "target": "enemy", "type": "ranged", "element": "fire"},
+    {"id": "mage_ice", "name": "❄️ Ледяное копье", "desc": "Урон от INT. Замораживает счетчик атаки босса. После 2 раз босс получает иммунитет.", "target": "enemy", "type": "ranged", "element": "ice"},
+    {"id": "mage_lightning", "name": "⚡ Удар молнии", "desc": "Огромный урон от INT. Шанс 30% получить 30 урона от перегрузки.", "target": "enemy", "type": "ranged", "element": "lightning"}
   ],
   "священник": [
-    {"id": "priest_smite", "name": "✨ Кара небесная", "desc": "Урон от INT. Слегка исцеляет весь отряд.", "target": "enemy"},
-    {"id": "priest_great_heal", "name": "💖 Великое исцеление", "desc": "Восстанавливает огромное количество HP одному союзнику (зависит от INT).", "target": "ally"},
-    {"id": "priest_heal", "name": "🌊 Волна исцеления", "desc": "Восстанавливает среднее количество HP всему отряду (зависит от INT).", "target": "party"}
+    {"id": "priest_smite", "name": "✨ Кара небесная", "desc": "Урон от INT. Слегка исцеляет весь отряд.", "target": "enemy", "type": "ranged", "element": "magic"},
+    {"id": "priest_great_heal", "name": "💖 Великое исцеление", "desc": "Восстанавливает огромное количество HP одному союзнику (зависит от INT).", "target": "ally", "type": "support", "element": "magic"},
+    {"id": "priest_heal", "name": "🌊 Волна исцеления", "desc": "Восстанавливает среднее количество HP всему отряду (зависит от INT).", "target": "party", "type": "support", "element": "magic"}
   ],
   "бард": [
-    {"id": "bard_solo", "name": "🎸 Соло", "desc": "Урон от INT. Просто красивая мелодия, бьющая по ушам врага.", "target": "enemy"},
-    {"id": "bard_regen", "name": "🎺 Песнь жизни", "desc": "Отряд регенерирует по 10 HP каждый ход и получает бонус к Атаке на 6 ходов. (Сила баффа зависит от CHA).", "target": "party"},
-    {"id": "bard_ode", "name": "🎼 Ода герою", "desc": "Дает выбранному союзнику внеочередной ход и бафф к Атаке на 4 хода. (Сила баффа зависит от CHA).", "target": "ally"}
+    {"id": "bard_solo", "name": "🎸 Соло", "desc": "Урон от INT. Просто красивая мелодия, бьющая по ушам врага.", "target": "enemy", "type": "ranged", "element": "magic"},
+    {"id": "bard_regen", "name": "🎺 Песнь жизни", "desc": "Отряд регенерирует по 10 HP каждый ход и получает бонус к Атаке на 6 ходов.", "target": "party", "type": "support", "element": "magic"},
+    {"id": "bard_ode", "name": "🎼 Ода герою", "desc": "Дает выбранному союзнику внеочередной ход и бафф к Атаке на 4 хода.", "target": "ally", "type": "support", "element": "magic"}
   ],
   "рейнджер": [
-    {"id": "ranger_shot", "name": "🏹 Прицельный выстрел", "desc": "Мощный выстрел, урон зависит от Ловкости (AGI).", "target": "enemy"},
-    {"id": "ranger_strafe", "name": "🌪️ Стрейф", "desc": "Активирует стойку: следующие 5 ходов рейнджер будет автоматически выпускать по 2 стрелы.", "target": "self"},
-    {"id": "ranger_focus", "name": "🎯 Метка уязвимости", "desc": "Снижает защиту босса на 40% на 7 ходов.", "target": "enemy"}
+    {"id": "ranger_shot", "name": "🏹 Прицельный выстрел", "desc": "Мощный выстрел, урон зависит от Ловкости (AGI).", "target": "enemy", "type": "ranged", "element": "physical"},
+    {"id": "ranger_strafe", "name": "🌪️ Стрейф", "desc": "Активирует стойку: следующие 5 ходов рейнджер будет автоматически выпускать по 2 стрелы.", "target": "self", "type": "support", "element": "physical"},
+    {"id": "ranger_focus", "name": "🎯 Метка уязвимости", "desc": "Снижает защиту босса на 40% на 7 ходов.", "target": "enemy", "type": "support", "element": "physical"}
   ],
   "некромант": [
-    {"id": "necro_touch", "name": "💀 Касание смерти", "desc": "Урон от INT.", "target": "enemy"},
-    {"id": "necro_vampire", "name": "🦇 Аура вампиризма", "desc": "Весь отряд исцеляется на 60% от нанесенного урона. Длится 6 ходов.", "target": "party"},
-    {"id": "necro_curse", "name": "👁️ Проклятие слабости", "desc": "Снижает наносимый боссом урон на 35% на 6 ходов.", "target": "enemy"}
+    {"id": "necro_touch", "name": "💀 Касание смерти", "desc": "Урон от INT.", "target": "enemy", "type": "melee", "element": "magic"},
+    {"id": "necro_vampire", "name": "🦇 Аура вампиризма", "desc": "Весь отряд исцеляется на 60% от нанесенного урона. Длится 6 ходов.", "target": "party", "type": "support", "element": "magic"},
+    {"id": "necro_curse", "name": "👁️ Проклятие слабости", "desc": "Снижает наносимый боссом урон на 35% на 6 ходов.", "target": "enemy", "type": "support", "element": "magic"}
   ]
 }

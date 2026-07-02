@@ -30,7 +30,6 @@ def generate_status_text():
     
     boss_text = ""
     
-    # 🔥 НОВОЕ: Счетчик скелетов
     skel_count = sum(1 for p in session.players.values() if p.get("is_skeleton"))
     if skel_count > 0:
         boss_text += f"🦴 **Скелетов на поле:** {skel_count}\n"
@@ -38,8 +37,14 @@ def generate_status_text():
     if session.boss_slow_stacks > 0:
         boss_text += f"🧊 **Сопротивление льду:** {session.boss_slow_stacks}/2\n"
         
-    if session.boss_ultimate:
-        boss_text += f"🌟 **Зарядка Ультимейта:** {session.boss_turns_taken}/3\n"
+    if session.dragon_in_flight:
+        boss_text += f"🦅 **Дракон в небе!** Урон по крыльям: {session.dragon_flight_damage}/{session.dragon_flight_threshold} HP (До Армагеддона: {session.dragon_flight_timer} хода босса)\n"
+    elif session.boss_ultimate:
+        boss_text += f"🌟 **Зарядка способности:** {session.boss_turns_taken}/3\n"
+        
+    if session.boss_debuffs.get("shattered_scales", 0) > 0:
+        boss_text += f"💔 **Расколотая чешуя:** Броня 0% (Ост: {session.boss_debuffs['shattered_scales']} х.)\n"
+        
     if session.boss_debuffs["def_down"]:
         total = int(sum(b["value"] for b in session.boss_debuffs["def_down"].values()) * 100)
         dur = max(b["duration"] for b in session.boss_debuffs["def_down"].values())

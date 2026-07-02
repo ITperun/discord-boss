@@ -56,17 +56,30 @@ def execute_skill(p_id, player, skill, target_id):
 
     dmg = 0
     if base_dmg > 0:
-        atk_mod = 1.0 + sum(b["value"] for b in session.party_buffs["atk"].values())
-        atk_mod = max(0.1, atk_mod) 
-        boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
-        dmg = max(1, int((base_dmg * atk_mod) * (1.0 - boss_def)))
-        action_text += f" и наносит **{dmg}** урона!"
-        if is_crit: action_text += " 💥 **КРИТИЧЕСКИЙ УДАР!**"
+        # ПРОВЕРКА НА ПОЛЕТ ДРАКОНА
+        if session.dragon_in_flight and skill.get("type") == "melee":
+            action_text += f"... Но Дракон слишком высоко! 🦅 Атака рассекает лишь воздух (0 урона)."
+            # Пропускаем расчет урона, оставляем dmg = 0
+        else:
+            if session.dragon_in_flight and skill.get("element") == "ice":
+                base_dmg *= 2
+                action_text += " ❄️ Лед наносит ДВОЙНОЙ урон по летящей цели!"
+
+            atk_mod = 1.0 + sum(b["value"] for b in session.party_buffs["atk"].values())
+            atk_mod = max(0.1, atk_mod) 
+            
+            # Расколотая чешуя обнуляет базовую защиту босса
+            boss_def = 0.0 if session.boss_debuffs.get("shattered_scales", 0) > 0 else session.boss_base_def
+            boss_def -= sum(b["value"] for b in session.boss_debuffs["def_down"].values())
+            
+            dmg = max(1, int((base_dmg * atk_mod) * (1.0 - boss_def)))
+            action_text += f" и наносит **{dmg}** урона!"
+            if is_crit: action_text += " 💥 **КРИТИЧЕСКИЙ УДАР!**"
         
     if sid == "warrior_shield": session.party_buffs["def"][p_id] = {"value": 0.35, "duration": 10}; action_text += " 🛡️ Защита усилена!"
     elif sid == "warrior_provoke":
         session.boss_debuffs["def_down"][p_id] = {"value": 0.30, "duration": 10}; action_text += " 📢 Босс спровоцирован!"
-        if random.random() < 0.3:
+        if random.random() < 0.3 and not session.dragon_in_flight: # В полете босс не отвечает на провокацию
             def_mod = 1.0
             for b in session.party_buffs["def"].values(): def_mod *= (1.0 - b["value"])
             c_dmg = max(1, int(random.randint(40,65) * def_mod))
@@ -79,7 +92,10 @@ def execute_skill(p_id, player, skill, target_id):
             
     elif sid == "mage_fireball" and random.random() < 0.9: session.boss_debuffs["dots"].append({"type": "горение", "damage": 12, "duration": 5, "caster_id": p_id}); action_text += " 🔥 Босс подожжен!"
     elif sid == "mage_ice" and random.random() < 0.9:
-        if session.boss_slow_stacks >= 2: action_text += " ❌ У босса иммунитет ко льду!"
+        if session.dragon_in_flight:
+            action_text += " ❌ В полёте дракон иммунен к заморозке счетчика!"
+        elif session.boss_slow_stacks >= 2: 
+            action_text += " ❌ У босса иммунитет ко льду!"
         else: 
             session.boss_slow_stacks += 1
             session.boss_cooldown_counter = 0
@@ -128,6 +144,18 @@ def execute_skill(p_id, player, skill, target_id):
 
     session.boss_hp = max(0, session.boss_hp - dmg)
     
+    # ЛОГИКА ДПС-ЧЕКА В ПОЛЕТЕ
+    if session.dragon_in_flight and dmg > 0:
+        session.dragon_flight_damage += dmg
+        action_text += f"\n🎯 **Урон по крыльям: {session.dragon_flight_damage}/{session.dragon_flight_threshold} HP!**"
+        
+        if session.dragon_flight_damage >= session.dragon_flight_threshold:
+            session.dragon_in_flight = False
+            fall_dmg = 500
+            session.boss_hp = max(0, session.boss_hp - fall_dmg)
+            session.boss_debuffs["shattered_scales"] = 3
+            action_text += f"\n💥 **КРЫЛЬЯ ПРОБИТЫ!** Дракон с грохотом рушится на землю, получая **{fall_dmg}** урона от падения! Его чешуя расколота (защита 0% на 3 хода)!"
+
     if session.party_buffs["vamp"] and dmg > 0:
         v_heal = int(dmg * 0.6); player["hp"] = min(player["max_hp"], player["hp"] + v_heal); action_text += f" 🦇 Отхил: **{v_heal}** HP!"
         
@@ -144,6 +172,9 @@ def process_global_tick(p_id):
         for sid_key in list(session.boss_debuffs[cat].keys()):
             session.boss_debuffs[cat][sid_key]["duration"] -= 1
             if session.boss_debuffs[cat][sid_key]["duration"] <= 0: del session.boss_debuffs[cat][sid_key]
+
+    if session.boss_debuffs.get("shattered_scales", 0) > 0:
+        session.boss_debuffs["shattered_scales"] -= 1
 
     regen_heal = len(session.party_buffs["regen"]) * 10
     if regen_heal > 0:
@@ -178,12 +209,29 @@ def process_global_tick(p_id):
     for p in session.players.values():
         if p["is_alive"] and p.get("strafe_turns", 0) > 0:
             stats = get_combat_stats(p["id"], p)
-            boss_def = session.boss_base_def - sum(b["value"] for b in session.boss_debuffs["def_down"].values())
+            
+            boss_def = 0.0 if session.boss_debuffs.get("shattered_scales", 0) > 0 else session.boss_base_def
+            boss_def -= sum(b["value"] for b in session.boss_debuffs["def_down"].values())
+            boss_def = max(0.0, boss_def)
+            
             base_arr = 5 + int(stats["AGI"] * 0.5)
             dmg1 = max(1, int(random.randint(base_arr, base_arr+5) * (1.0 - boss_def)))
             dmg2 = max(1, int(random.randint(base_arr, base_arr+5) * (1.0 - boss_def)))
-            session.boss_hp = max(0, session.boss_hp - (dmg1 + dmg2))
+            total_dmg = dmg1 + dmg2
+            
+            session.boss_hp = max(0, session.boss_hp - total_dmg)
             tick_text += f"\n🏹 Авто-Стрейф ({p['name']}) наносит **{dmg1}** и **{dmg2}** урона!"
+            
+            if session.dragon_in_flight:
+                session.dragon_flight_damage += total_dmg
+                tick_text += f" 🎯 (Урон по крыльям: {session.dragon_flight_damage}/{session.dragon_flight_threshold})"
+                if session.dragon_flight_damage >= session.dragon_flight_threshold:
+                    session.dragon_in_flight = False
+                    fall_dmg = 200
+                    session.boss_hp = max(0, session.boss_hp - fall_dmg)
+                    session.boss_debuffs["shattered_scales"] = 3
+                    tick_text += f"\n💥 **КРЫЛЬЯ ПРОБИТЫ!** Дракон рушится на землю, получая **{fall_dmg}** урона! Чешуя расколота!"
+
             p["strafe_turns"] -= 1
             
     alive_count = len([p for p in session.players.values() if p["is_alive"]])
@@ -199,10 +247,35 @@ def process_global_tick(p_id):
 def execute_boss_attack(alive_players):
     skeletons = [p for p in session.players.values() if not p["is_alive"] and p.get("is_skeleton")]
 
-    if session.boss_turns_taken >= 3 and session.boss_ultimate:
-        boss_atk = session.boss_ultimate
-        session.boss_turns_taken = 0
-        is_ultimate = True
+    is_ultimate = False
+    boss_atk = None
+
+    # 1. Если Дракон в полете - он не атакует, а считает ходы до Армагеддона
+    if session.dragon_in_flight:
+        session.dragon_flight_timer -= 1
+        if session.dragon_flight_timer <= 0:
+            session.dragon_in_flight = False
+            boss_atk = session.boss_ultimate
+            is_ultimate = True
+            # Начинается Армагеддон!
+        else:
+            return f"🦅 **Дракон парит высоко в небе!** Он накапливает энергию для сокрушительного удара... (Осталось до Армагеддона: {session.dragon_flight_timer} хода босса)", ""
+
+    # 2. Проверка на активацию Взлета или обычного Ультимейта
+    elif session.boss_turns_taken >= 3 and session.boss_ultimate:
+        if session.boss_ultimate.get("is_flight"):
+            session.dragon_in_flight = True
+            session.dragon_flight_timer = session.boss_ultimate.get("flight_turns", 3)
+            session.dragon_flight_damage = 0
+            session.dragon_flight_threshold = session.boss_ultimate.get("flight_threshold", 150)
+            session.boss_turns_taken = 0
+            return f"🦅 **ВЗЛЁТ!** Дракон взмывает в небеса, становясь недосягаемым для ближнего боя! У вас есть {session.dragon_flight_timer} хода босса, чтобы нанести {session.dragon_flight_threshold} урона дальними атаками и сбить его!", ""
+        else:
+            boss_atk = session.boss_ultimate
+            session.boss_turns_taken = 0
+            is_ultimate = True
+
+    # 3. Обычная атака босса
     else:
         valid_attacks = []
         for atk in session.boss_attacks:
@@ -214,7 +287,6 @@ def execute_boss_attack(alive_players):
                 
         boss_atk = random.choice(valid_attacks)
         session.boss_turns_taken += 1
-        is_ultimate = False
 
     is_corpse_explosion = boss_atk.get("special") == "corpse_explosion"
     skel_count = len(skeletons) if is_corpse_explosion else 0
@@ -238,8 +310,13 @@ def execute_boss_attack(alive_players):
         targets = [random.choice(alive_players)]
         atk_type_text = "точечную атаку"
 
-    if is_ultimate: boss_atk_text = f"🌟 **УЛЬТИМЕЙТ!** 👹 **{session.boss_name}** обрушивает {atk_type_text} **{boss_atk['name']}**!"
-    else: boss_atk_text = f"👹 **{session.boss_name}** проводит {atk_type_text} **{boss_atk['name']}**!"
+    if is_ultimate: 
+        if boss_atk.get("is_flight"):
+             boss_atk_text = f"🌋 **АРМАГЕДДОН!** Вы не успели сбить Дракона! Он обрушивает **{boss_atk['name']}**!"
+        else:
+             boss_atk_text = f"🌟 **УЛЬТИМЕЙТ!** 👹 **{session.boss_name}** обрушивает {atk_type_text} **{boss_atk['name']}**!"
+    else: 
+        boss_atk_text = f"👹 **{session.boss_name}** проводит {atk_type_text} **{boss_atk['name']}**!"
     
     death_reports = ""
     total_heal = 0
@@ -280,7 +357,6 @@ def execute_boss_attack(alive_players):
                     "value": boss_atk["effect"].get("value", 0.30)
                 })
             
-            # Пишем один раз, без лишних "штук" и "ходов", как и было
             boss_atk_text += f" ☣️ Наложен эффект: {boss_atk['effect']['type']}!"
 
         if t["hp"] <= 0:
